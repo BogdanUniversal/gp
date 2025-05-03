@@ -18,7 +18,7 @@ def listTerminalInt(maxListLength, rng: np.random.default_rng):
         {"type": "terminal", "terminal": "hex", "returnType": int, "value": 16},
         {
             "type": "terminal",
-            "terminal": "randomInt", 
+            "terminal": "randomInt",
             "returnType": int,
             "value": generateRandomInt(maxListLength, rng),
         },
@@ -42,14 +42,17 @@ def listTerminalFloat(maxListLength, rng: np.random.default_rng):
         {"type": "terminal", "terminal": "pi", "returnType": float, "value": math.pi},
         {"type": "terminal", "terminal": "euler", "returnType": float, "value": math.e},
     ]
-    
+
+
 def listTerminalBoolean(rng: np.random.default_rng):
-    return [{
+    return [
+        {
             "type": "terminal",
             "terminal": "randomBoolean",
             "returnType": bool,
             "value": generateRandomBoolean(rng),
-        },]
+        },
+    ]
 
 
 def generateRandomInt(maxListLength, rng: np.random.default_rng):
@@ -62,9 +65,9 @@ def generateRandomInt(maxListLength, rng: np.random.default_rng):
 def generateRandomUniform(maxListLength, rng: np.random.default_rng):
     choice = rng.choice([1, 2, 3], p=[0.5, 0.4, 0.1])
     if choice == 1:
-        rng.uniform(0, maxListLength)
+        return rng.uniform(0, maxListLength)
     elif choice == 2:
-        rng.uniform(0, 1)
+        return rng.uniform(0, 1)
     return rng.uniform((-1) * maxListLength, maxListLength)
 
 

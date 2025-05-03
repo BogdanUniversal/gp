@@ -1,6 +1,7 @@
 import uuid
 import bcrypt
 from sqlalchemy.dialects.postgresql import UUID, TEXT
+from sqlalchemy.orm import relationship
 from extensions import db
 
 class User(db.Model):
@@ -11,7 +12,9 @@ class User(db.Model):
     first_name = db.Column(TEXT, nullable=False)
     last_name = db.Column(TEXT, nullable=False)
     password = db.Column(TEXT, nullable=False)
+    datasets = relationship("Dataset", backref="user", cascade="all, delete-orphan")
 
+    
     def __init__(self, email, firstName, lastName, password):
         self.email = email
         self.first_name = firstName

@@ -1,9 +1,12 @@
 from flask import Flask
 from flask_cors import CORS
-from config.config import Config
-from mvc.controller.user_controller import bp
-from extensions import db
 from flask_jwt_extended import JWTManager
+from flask_migrate import Migrate
+from config.config import Config
+from mvc.controller.user_controller import userBp
+from mvc.controller.dataset_controller import datasetBp
+from extensions import db
+
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -14,10 +17,12 @@ CORS(app, supports_credentials=True)
 
 db.init_app(app)
 
-with app.app_context():
-    db.create_all()
+# with app.app_context():
+#     db.create_all()
+migrate = Migrate(app, db)
 
-app.register_blueprint(bp, url_prefix="/users")
+app.register_blueprint(userBp, url_prefix="/users")
+app.register_blueprint(datasetBp, url_prefix="/datasets")
 
 # @app.after_request
 # def after_request(response):

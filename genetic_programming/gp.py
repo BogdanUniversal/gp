@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 from function_set import *
 from terminal_set import *
+from body_set import *
 from tree import Node, Tree
 from helper import *
 
@@ -19,7 +20,13 @@ rng = np.random.default_rng(SEED)
 
 environment = {int: [], float: [], bool: [], list: []}
 
-a = generateBody(environment, 10, rng, 50)
+a = generateBody(rng, environment, 200, 1000)
+
+for child in a.children:
+    if child.nodeType == "body":
+        print(child.attributes)
 
 # asb = generateTree(rng, 0, 10, int)
 
+
+# %%
