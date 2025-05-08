@@ -3,6 +3,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import (
     create_access_token,
     create_refresh_token,
+    get_csrf_token,
     get_jwt,
     get_jwt_identity,
     jwt_required,
@@ -65,6 +66,7 @@ def userSignup():
 
 
 @userBp.route("/signout", methods=["GET"])
+@jwt_required()
 def userSignout():
     response = jsonify({"signout": "Signout successful"})
 
@@ -80,33 +82,10 @@ def test():
     print(f"Accessing /test with user: {current_user_name}")
     return jsonify({"test": "test successful", "user": current_user_name})
 
-    
-@userBp.after_request
-def refresh_expiring_jwts(response):
-    """
-    Automatically refresh the access token if the refresh token is valid and the access token is close to expiring.
-    """
-    try:
-        # Check if the access token is close to expiring
-        exp_timestamp = get_jwt()["exp"]
-        now = datetime.now(timezone.utc)
-        target_timestamp = datetime.timestamp(now + timedelta(minutes=30))
 
-        if target_timestamp > exp_timestamp:
-            # Use the refresh token to generate a new access token
-            identity = get_jwt_identity()  # Get the identity from the current token
-            access_token = create_access_token(identity=identity)  # Create a new access token
-            set_access_cookies(response, access_token)  # Set the new access token in cookies
-
-    except (RuntimeError, KeyError):
-        # If there's no valid access token, check for a valid refresh token
-        try:
-            # Use the refresh token to generate a new access token
-            identity = get_jwt_identity()  # Get the identity from the refresh token
-            access_token = create_access_token(identity=identity)  # Create a new access token
-            set_access_cookies(response, access_token)  # Set the new access token in cookies
-        except Exception:
-            # If no valid refresh token is present, return the original response
-            pass
-
-    return response
+@userBp.route("/get-csrf-token", methods=["GET"])
+@jwt_required()
+def get_csrf():
+    jwt = get_jwt()
+    encoded_token = jwt['csrf']  # Get the CSRF token from the JWT claims
+    return jsonify({"csrf_token": encoded_token})

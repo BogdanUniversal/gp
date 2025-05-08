@@ -6,13 +6,22 @@ import os
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Get the project root directory
 DATASETS_PATH = os.path.join(BASE_DIR, "datasets")  # Path to the 'datasets' folder
 
-def createDataset(name, description, user_id, data):
+
+def getDatasets(user_id):
+    try:
+        datasets = Dataset.query.filter_by(user_id=user_id).all()
+        return datasets
+    except Exception:
+        return None
+
+
+def createDataset(user_id, name, data):
     try:
         os.makedirs(os.path.join(DATASETS_PATH, str(user_id)), exist_ok=True)
         file_path = os.path.join(DATASETS_PATH, str(user_id), name + ".csv")
         data.save(file_path)
         
-        dataset = Dataset(name, description, user_id)
+        dataset = Dataset(user_id, name, file_path)
         
         db.session.add(dataset)
         db.session.commit()
