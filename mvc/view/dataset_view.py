@@ -1,6 +1,7 @@
 from mvc.model.dataset import Dataset
 from extensions import db
 import os
+import uuid
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Get the project root directory
@@ -13,12 +14,20 @@ def getDatasets(user_id):
         return datasets
     except Exception:
         return None
+    
+    
+def getDataset(user_id, dataset_id):
+    try:
+        dataset = Dataset.query.filter_by(user_id=user_id, id=dataset_id).first()
+        return dataset
+    except Exception:
+        return None
 
 
 def createDataset(user_id, name, data):
     try:
         os.makedirs(os.path.join(DATASETS_PATH, str(user_id)), exist_ok=True)
-        file_path = os.path.join(DATASETS_PATH, str(user_id), name + ".csv")
+        file_path = os.path.join(DATASETS_PATH, str(user_id), str(uuid.uuid4()) + ".csv")
         data.save(file_path)
         
         dataset = Dataset(user_id, name, file_path)
