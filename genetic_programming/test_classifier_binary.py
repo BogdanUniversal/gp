@@ -49,6 +49,8 @@ gender["gender"].replace({"Male": 1, "Female": 0}, inplace=True)
 
 X, y = gender.iloc[:, :-1], gender.iloc[:, -1]
 
+
+#%%
 # Group correlated columns
 correlation_matrix = X.corr()
 threshold = 0.5
@@ -67,6 +69,7 @@ for i in range(len(correlation_matrix.columns)):
 
 correlated_groups = [list(group) for group in correlated_groups]
 
+#%%
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 

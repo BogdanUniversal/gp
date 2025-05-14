@@ -76,7 +76,6 @@ def userSignout():
 def test():
     current_user = get_jwt_identity()
     current_user_name = getUser(current_user).first_name
-    print(f"Accessing /test with user: {current_user_name}")
     return jsonify({"test": "test successful", "user": current_user_name})
 
 
@@ -85,4 +84,5 @@ def test():
 def get_csrf():
     jwt = get_jwt()
     encoded_token = jwt['csrf']  # Get the CSRF token from the JWT claims
+    print(f"CSRF Token: {encoded_token}")
     return jsonify({"csrf_token": encoded_token})

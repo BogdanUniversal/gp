@@ -7,7 +7,6 @@ from mvc.view.user_view import getUser
 
 datasetBp = Blueprint("dataset", __name__)
 
-
 @datasetBp.route("/get_datasets", methods=["GET"])
 @jwt_required()
 def getDatasetsRoute():
@@ -43,11 +42,7 @@ def getDatasetRoute():
         if not dataset_id:
             return jsonify({"dataset": "Dataset ID is required"}), 422
 
-        dataset = getDataset(user_id, dataset_id)
-
-        df = pd.read_csv(dataset.file_path, nrows=200)
-        data = df.to_dict(orient="records")
-        columns = df.columns.tolist()
+        dataset, data, columns = getDataset(user_id, dataset_id)
 
         if dataset is None:
             return jsonify({"dataset": "Dataset not found"}), 404

@@ -1,7 +1,10 @@
+import pandas as pd
 from mvc.model.dataset import Dataset
 from extensions import db
 import os
 import uuid
+
+from mvc.model.dataset_cache import dataset_cache
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Get the project root directory
@@ -19,7 +22,14 @@ def getDatasets(user_id):
 def getDataset(user_id, dataset_id):
     try:
         dataset = Dataset.query.filter_by(user_id=user_id, id=dataset_id).first()
-        return dataset
+        
+        df = pd.read_csv(dataset.file_path)
+        data = df.head(200).to_dict(orient="records")
+        columns = df.columns.tolist()
+        
+        dataset_cache.set(str(user_id), df)
+        
+        return dataset, data, columns
     except Exception:
         return None
 

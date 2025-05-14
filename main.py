@@ -12,6 +12,7 @@ from flask_migrate import Migrate
 from config.config import Config
 from mvc.controller.user_controller import userBp
 from mvc.controller.dataset_controller import datasetBp
+from mvc.controller.model_controller import modelBp
 from extensions import db
 
 
@@ -45,6 +46,7 @@ migrate = Migrate(app, db)
 
 app.register_blueprint(userBp, url_prefix="/users")
 app.register_blueprint(datasetBp, url_prefix="/datasets")
+app.register_blueprint(modelBp, url_prefix="/models")
 
 
 @app.after_request
