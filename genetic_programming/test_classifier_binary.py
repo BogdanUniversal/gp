@@ -36,6 +36,8 @@ from sklearn.model_selection import train_test_split
 
 import dalex as dx
 
+# %%
+
 # Read the spam list features and put it in a list of lists.
 # The dataset is from http://archive.ics.uci.edu/ml/datasets/Spambase
 # This example is a copy of the OpenBEAGLE example :
@@ -49,8 +51,13 @@ gender["gender"].replace({"Male": 1, "Female": 0}, inplace=True)
 
 X, y = gender.iloc[:, :-1], gender.iloc[:, -1]
 
+def foo(x, y):
+    """
+    STHIS IS SHIT
+    """
+    return x + y
 
-#%%
+# %%
 # Group correlated columns
 correlation_matrix = X.corr()
 threshold = 0.5
@@ -61,48 +68,60 @@ for i in range(len(correlation_matrix.columns)):
         if abs(correlation_matrix.iloc[i, j]) > threshold:
             # Find or create a group for the correlated columns
             for group in correlated_groups:
-                if correlation_matrix.columns[i] in group or correlation_matrix.columns[j] in group:
-                    group.update([correlation_matrix.columns[i], correlation_matrix.columns[j]])
+                if (
+                    correlation_matrix.columns[i] in group
+                    or correlation_matrix.columns[j] in group
+                ):
+                    group.update(
+                        [correlation_matrix.columns[i], correlation_matrix.columns[j]]
+                    )
                     break
             else:
-                correlated_groups.append(set([correlation_matrix.columns[i], correlation_matrix.columns[j]]))
+                correlated_groups.append(
+                    set([correlation_matrix.columns[i], correlation_matrix.columns[j]])
+                )
 
 correlated_groups = [list(group) for group in correlated_groups]
 
-#%%
+# %%
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
 
 
-umap_reducer = umap.UMAP(n_components=1, random_state=42, output_metric="euclidean") # Enable inverse transform
+umap_reducer = umap.UMAP(
+    n_components=1, random_state=42, output_metric="euclidean"
+)  # Enable inverse transform
 # Fit the data
 for group in correlated_groups:
     if len(group) > 1:  # Only apply UMAP if the group has more than one feature
-        umap_reducer = umap_reducer.fit(X[group])  
-        
+        umap_reducer = umap_reducer.fit(X[group])
+
         # Add UMAP component to the dataset
         colName = f"UMAP-{'-'.join(map(str, group))}"
-        
+
         X[colName] = umap_reducer.transform(X[group]).flatten()
-        
+
         X_train[colName] = umap_reducer.transform(X_train[group]).flatten()
         X_train.drop(columns=group, inplace=True)  # Drop the original features
-        
+
         X_test[colName] = umap_reducer.transform(X_test[group]).flatten()
         # X_test.drop(columns=group, inplace=True)  # Drop the original features
     else:
         # If the group has only one feature, skip UMAP and retain the feature
         print(f"Skipping UMAP for single-feature group: {group}")
-        
-        
+
+
 scaler = StandardScaler()
-scaler.set_output(transform = "pandas")
+scaler.set_output(transform="pandas")
 scaler.fit(X[X_train.columns])  # Fit only on the training data
 
 
-
 X_train_standardized = scaler.transform(X_train)
-X_test_standardized = scaler.transform(X_test[X_train.columns])  # Use the same columns as in training
+X_test_standardized = scaler.transform(
+    X_test[X_train.columns]
+)  # Use the same columns as in training
 
 X_train_list = X_train_standardized.values.tolist()
 X_test_list = X_test_standardized.values.tolist()
@@ -110,7 +129,18 @@ y_train_list = y_train.values.tolist()
 y_test_list = y_test.values.tolist()
 
 # defined a new primitive set for strongly typed GP
-pset = gp.PrimitiveSetTyped("MAIN", itertools.repeat(float, gender.shape[1] - 1 - sum([len(group) for group in correlated_groups]) + 1 * len(correlated_groups)), float, "IN") # ATENTIE LA 1 * len(correlated_groups)
+pset = gp.PrimitiveSetTyped(
+    "MAIN",
+    itertools.repeat(
+        float,
+        gender.shape[1]
+        - 1
+        - sum([len(group) for group in correlated_groups])
+        + 1 * len(correlated_groups),
+    ),
+    float,
+    "IN",
+)  # ATENTIE LA 1 * len(correlated_groups)
 
 # boolean operators
 pset.addPrimitive(operator.and_, [bool, bool], bool)
@@ -125,7 +155,8 @@ def protectedDiv(left, right):
         return left / right
     except ZeroDivisionError:
         return 1
-    
+
+
 def sigmoid(x):
     if x >= 0:
         z = np.exp(-x)
@@ -133,6 +164,7 @@ def sigmoid(x):
     else:
         z = np.exp(x)
         return z / (1 + z)
+
 
 pset.addPrimitive(operator.add, [float, float], float)
 pset.addPrimitive(operator.sub, [float, float], float)
@@ -174,7 +206,7 @@ def evalSpambase(individual):
     # Transform the tree expression in a callable function
     func = toolbox.compile(expr=individual)
     # Randomly sample 400 mails in the spam database
-    
+
     # Evaluate the sum of correctly identified mail as spam
     # result = sum(bool(func(*mail[:57])) is bool(mail[57]) for mail in spam_samp)
     y_train_predict = [sigmoid(func(*row)) for row in X_train_list]
@@ -209,10 +241,10 @@ if __name__ == "__main__":
 
 # %%
 
-# %% 
+# %%
 
 func = toolbox.compile(hof[0])
-results=[]
+results = []
 for row in X_test_list:
     results.append(sigmoid(func(*row)))
 
@@ -232,8 +264,12 @@ for row in X_test_list:
 
 # plotDFObserved["Predicted"] = plotDFPredicted["gender"]
 
-plotDFObserved = pd.DataFrame({"Observed": y_test.values.tolist(), "Predicted": results})
-plotDFObserved["Predicted"] = plotDFObserved["Predicted"].apply(lambda x: 1 if x > 0.5 else 0)
+plotDFObserved = pd.DataFrame(
+    {"Observed": y_test.values.tolist(), "Predicted": results}
+)
+plotDFObserved["Predicted"] = plotDFObserved["Predicted"].apply(
+    lambda x: 1 if x > 0.5 else 0
+)
 
 plotDFObserved.sort_values(by="Observed", ascending=True, inplace=True)
 
@@ -241,6 +277,7 @@ plotDFObserved.reset_index(drop=True, inplace=True)
 # %%
 
 import plotly.express as px
+
 plt = px.scatter(plotDFObserved[["Observed", "Predicted"]])
 plt.show()
 
@@ -249,32 +286,29 @@ plt.show()
 # import warnings
 # warnings.filterwarnings("ignore", message=".*'force_all_finite' was renamed to 'ensure_all_finite'.*")
 
+
 def predict_function(model, data):
     cols = []
     for group in correlated_groups:
         if len(group) > 1:  # Only apply UMAP if the group has more than one feature
             colName = f"UMAP-{'-'.join(map(str, group))}"
             cols.append(colName)
-            
+
             data[colName] = umap_reducer.transform(data[group]).flatten()
         else:
             # If the group has only one feature, skip UMAP and retain the feature
             print(f"Skipping UMAP for single-feature group: {group}")
-    
-    
+
     data_standardized = scaler.transform(data[X_train.columns])  # Standardize the data
-    
-    data.drop(columns=cols, inplace=True)  # Drop the new features    
-    
+
+    data.drop(columns=cols, inplace=True)  # Drop the new features
+
     dataList = data_standardized.values.tolist()
     func = toolbox.compile(model[0])  # Compile the best individual
     return np.array([sigmoid(func(*row)) for row in dataList])
 
 
-
-
-
-X_test_predict = X_test.iloc[:, :-len(correlated_groups)].copy()
+X_test_predict = X_test.iloc[:, : -len(correlated_groups)].copy()
 
 # Initialize the explainer
 explainer = dx.Explainer(
@@ -283,7 +317,7 @@ explainer = dx.Explainer(
     y=y_test,  # True labels
     predict_function=predict_function,  # Custom predict function
     model_type="classification",
-    label="Genetic Programming Model"
+    label="Genetic Programming Model",
 )
 performance = explainer.model_performance()
 performance.plot()
