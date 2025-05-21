@@ -1,8 +1,8 @@
 from threading import Lock
-import pandas as pd
+from typing import Dict
 
 
-class DatasetCache:
+class ParametersCache:
     def __init__(self):
         self._cache = {}
         self._lock = Lock()
@@ -11,9 +11,9 @@ class DatasetCache:
         with self._lock:
             return self._cache.get(userId)
     
-    def set(self, userId: str, df: pd.DataFrame):
+    def set(self, userId: str, parameters: Dict):
         with self._lock:
-            self._cache[userId] = df
+            self._cache[userId] = parameters
     
     def remove(self, userId: str):
         with self._lock:
@@ -25,4 +25,4 @@ class DatasetCache:
             self._cache = {}
             
             
-dataset_cache = DatasetCache()
+parameters_cache = ParametersCache()

@@ -218,7 +218,10 @@ toolbox.register("evaluate", evalSpambase)
 toolbox.register("select", tools.selTournament, tournsize=5)
 toolbox.register("mate", gp.cxOnePoint)
 toolbox.register("expr_mut", gp.genFull, min_=0, max_=4)
+
 toolbox.register("mutate", gp.mutUniform, expr=toolbox.expr_mut, pset=pset)
+toolbox.register("mut_shrink", gp.mutShrink)
+toolbox.register("mut_eph", gp.mutEphemeral, mode="all")
 
 random.seed(10)
 pop = toolbox.population(n=100)
