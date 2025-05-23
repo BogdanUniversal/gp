@@ -35,19 +35,21 @@ def protected_div(left, right):
     
     
 PRIMITIVES = [
-    {"id": "if", "name": "If Then Else", "type": "Primitive", "function": if_then_else},
-    {"id": "add", "name": "Addition", "type": "Primitive", "function": operator.add},
-    {"id": "sub", "name": "Substraction", "type": "Primitive", "function": operator.sub},
-    {"id": "mul", "name": "Multiplication", "type": "Primitive", "function": operator.mul},
+    {"id": "if", "name": "If Then Else", "type": "Primitive", "function": if_then_else, "in": [bool, float, float], "out": float},
+    {"id": "add", "name": "Addition", "type": "Primitive", "function": operator.add, "in": [float, float], "out": float},
+    {"id": "sub", "name": "Substraction", "type": "Primitive", "function": operator.sub, "in": [float, float], "out": float},
+    {"id": "mul", "name": "Multiplication", "type": "Primitive", "function": operator.mul, "in": [float, float], "out": float},
     {
         "id": "div",
         "name": "Protected Division",
         "type": "Primitive",
         "function": protected_div,
+        "in": [float, float],
+        "out": float,
     },
-    {"id": "and", "name": "And", "type": "Primitive", "function": operator.and_},
-    {"id": "or", "name": "Or", "type": "Primitive", "function": operator.or_},
-    {"id": "not", "name": "Not", "type": "Primitive", "function": operator.not_},
-    {"id": "lt", "name": "Lower Than", "type": "Primitive", "function": operator.lt},
-    {"id": "eq", "name": "Equal", "type": "Primitive", "function": operator.eq},
+    {"id": "and", "name": "And", "type": "Primitive", "function": operator.and_, "in": [bool, bool], "out": bool},
+    {"id": "or", "name": "Or", "type": "Primitive", "function": operator.or_, "in": [bool, bool], "out": bool},
+    {"id": "not", "name": "Not", "type": "Primitive", "function": operator.not_, "in": [bool], "out": bool},
+    {"id": "lt", "name": "Lower Than", "type": "Primitive", "function": operator.lt, "in": [float, float], "out": bool},
+    {"id": "eq", "name": "Equal", "type": "Primitive", "function": operator.eq, "in": [float, float], "out": bool},
 ]

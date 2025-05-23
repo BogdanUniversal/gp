@@ -1,11 +1,22 @@
+from functools import partial
 from deap import base, creator, tools
 import numpy as np
+from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-from general_set import LOSSES_SET
+import umap
+from general_set import LOSSES_SET, MUTATION_SET, SELECTION_SET
+from deap import gp, algorithms, base, creator, tools
+import itertools
+from genetic_programming.primitive_set_gp import PRIMITIVES
+from genetic_programming.terminal_set_gp import TERMINALS
 from mvc.model.dataset_cache import dataset_cache
 from mvc.model.parameters_cache import parameters_cache
+
+
+creator.create("FitnessMin", base.Fitness, weights=(-4.0, -1.0))
+creator.create("Individual", gp.PrimitiveTree, fitness=creator.FitnessMin)
 
 
 def getCorrelatedGroups(correlation_matrix, threshold=0.6):
@@ -40,11 +51,29 @@ def getCorrelatedGroups(correlation_matrix, threshold=0.6):
     return [list(group) for group in correlated_groups]
 
 
-def run_genetic_algorithm(user_id):
+def custom_mutation(rng, mutations, pset, expr, ms, treeDepth):
+    selected_mutation = rng.choice(mutations)
+
+    if selected_mutation["id"] == "mutUniform":
+        return partial(selected_mutation["function"], expr=expr, pset=pset)
+    elif selected_mutation["id"] == "mutEphemeral":
+        return partial(selected_mutation["function"], mode="all")
+    elif selected_mutation["id"] == "mutSemantic":
+        return partial(
+            selected_mutation["function"],
+            gen_func=gp.genHalfAndHalf,
+            pset=pset,
+            min_=0,
+            max_=max(4, treeDepth // 3),
+        )
+
+
+def run_genetic_algorithm_pipeline(user_id):
     dataset = dataset_cache.get(str(user_id)).copy()
     parameters = parameters_cache.get(user_id)
 
     seed = np.random.SeedSequence()
+    rng = np.random.default_rng(seed.entropy)
 
     classificationOk = (
         True
@@ -66,17 +95,17 @@ def run_genetic_algorithm(user_id):
 
     scalerX = StandardScaler()
     scalerX.set_output(transform="pandas")
-    
+
     scalerY = StandardScaler()
     scalerY.set_output(transform="pandas")
-    
+
     scalerX.fit(X)
     X_train_standardized = scalerX.transform(X_train)
     X_test_standardized = scalerX.transform(X_test)
-    
+
     X_train_list = X_train_standardized.values.tolist()
     X_test_list = X_test_standardized.values.tolist()
-    
+
     if not classificationOk:
         scalerY.fit(y.values.reshape(-1, 1))
         y_train_standardized = scalerY.transform(y_train.values.reshape(-1, 1))
@@ -87,9 +116,96 @@ def run_genetic_algorithm(user_id):
         y_train_list = y_train.values.tolist()
         y_test_list = y_test.values.tolist()
 
-
     correlation_matrix = X.corr(method=parameters["corrOpt"].lower())
     correlated_groups = getCorrelatedGroups(correlation_matrix, 0.6)
+
+    def getGroupNComponent(group):
+        return 1 if len(group) == 2 else 2 if len(group) < 5 else 3
+
+    for group in correlated_groups:
+        if len(group) > 1:
+            n_comp = getGroupNComponent(group)
+
+            reducer = (
+                umap.UMAP(
+                    n_components=n_comp,
+                    random_state=seed.entropy,
+                    output_metric="euclidean",  # CHECK IF CORRECT NOTE
+                )
+                if parameters["dimRedOpt"] == "UMAP"
+                else PCA(n_components=n_comp, random_state=seed.entropy)
+            )
+
+            reducer = reducer.fit(X[group])
+            result = reducer.transform(X[group])
+            for i in range(n_comp):
+                colName = f"REDUCED-{'-'.join(map(str, group))}-{i}"
+                X[colName] = result[:, i]
+                X_train[colName] = reducer.transform(X_train[group])[:, i]
+                X_test[colName] = reducer.transform(X_test[group])[:, i]
+
+    pset = gp.PrimitiveSetTyped(
+        "MAIN",
+        itertools.repeat(
+            float,
+            dataset.shape[1]
+            - 1
+            - sum([len(group) for group in correlated_groups])
+            + [getGroupNComponent(group) for group in correlated_groups],
+        ),
+        float,
+        "IN",
+    )
+
+    for funParam in parameters["functions"]:
+        if funParam["type"] == "Primitive":
+            fun = [f for f in PRIMITIVES if f["id"] == funParam["id"]][0]
+            pset.addPrimitive(
+                fun["function"],
+                fun["in"],
+                fun["out"],
+                name=fun["name"],
+            )
+        elif funParam["type"] == "Terminal":
+            fun = [f for f in TERMINALS if f["id"] == funParam["id"]][0]
+            pset.addEphemeralConstant(fun["name"], fun["function"], fun["out"])
+        elif funParam["type"] == "Constant":
+            fun = [f for f in TERMINALS if f["id"] == funParam["id"]][0]
+            pset.addTerminal(fun["function"], fun["out"])
+
+    toolbox = base.Toolbox()
+    toolbox.register(
+        "expr", gp.genHalfAndHalf, pset=pset, min_=1, max_=parameters["treeDepth"]
+    )
+    toolbox.register("individual", tools.initIterate, creator.Individual, toolbox.expr)
+    toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+    toolbox.register("compile", gp.compile, pset=pset)
+
+    toolbox.register("evaluate", evalSpambase)
+    toolbox.register(
+        "select",
+        [s for s in SELECTION_SET if s["id"] == parameters["selectionMethod"]["id"]][0][
+            "function"
+        ],
+        tournsize=5,
+    )
+    toolbox.register("mate", gp.cxOnePoint)
+    toolbox.register(
+        "expr_mut", gp.genHalfAndHalf, min_=0, max_=max(4, parameters["treeDepth"] // 3)
+    )
+
+    for mutParam in parameters["mutationFunction"]:
+        mut = [m for m in MUTATION_SET if m["id"] == mutParam["id"]][0]
+        toolbox.register(
+            "mutate",
+            mut["function"],
+            expr=toolbox.expr_mut,
+            pset=pset,
+            **mut.get("kwargs", {}),
+        )
+    toolbox.register("mutate", gp.mutUniform, expr=toolbox.expr_mut, pset=pset)
+    toolbox.register("mut_shrink", gp.mutShrink)
+    toolbox.register("mut_eph", gp.mutEphemeral, mode="all")
 
     # Define the callback function to send updates
     def update_callback(gen, stats, best_individual):

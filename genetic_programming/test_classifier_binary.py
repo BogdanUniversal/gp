@@ -33,6 +33,7 @@ import umap
 from sklearn.discriminant_analysis import StandardScaler
 from sklearn.metrics import accuracy_score, roc_auc_score, mean_squared_error
 from sklearn.model_selection import train_test_split
+from sklearn.decomposition import PCA
 
 import dalex as dx
 
@@ -113,16 +114,35 @@ umap_reducer = umap.UMAP(
 #         print(f"Skipping UMAP for single-feature group: {group}")
 
 
+# for group in correlated_groups:
+#     if len(group) > 1:
+#         # Scale number of components based on group size
+#         n_comp = 2  # Between 1 and 3 components
+        
+#         umap_reducer = umap.UMAP(
+#             n_components=n_comp, 
+#             random_state=42, 
+#             output_metric="euclidean"
+#         )
+        
+#         umap_reducer = umap_reducer.fit(X[group])
+        
+#         # Handle multiple components if n_comp > 1
+#         umap_result = umap_reducer.transform(X[group])
+#         for i in range(n_comp):
+#             colName = f"UMAP-{'-'.join(map(str, group))}-{i}"
+#             X[colName] = umap_result[:, i]
+#             X_train[colName] = umap_reducer.transform(X_train[group])[:, i]
+#             X_test[colName] = umap_reducer.transform(X_test[group])[:, i]
+            
+            
 for group in correlated_groups:
     if len(group) > 1:
         # Scale number of components based on group size
         n_comp = 2  # Between 1 and 3 components
         
-        umap_reducer = umap.UMAP(
-            n_components=n_comp, 
-            random_state=42, 
-            output_metric="euclidean"
-        )
+        umap_reducer = PCA(
+            n_components=n_comp, random_state=42)
         
         umap_reducer = umap_reducer.fit(X[group])
         
