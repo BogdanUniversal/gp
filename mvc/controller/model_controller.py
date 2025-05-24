@@ -110,6 +110,7 @@ def setParametersRoute():
         currentUserId = getUser(currentUser).id
 
         parameters_cache.set(currentUserId, args)
+        print(f"Parameters set for user {currentUserId}: {args}")
         # Here you would typically save these parameters to a database or use them in your application logic
         # For demonstration purposes, we'll just return them in the response
 

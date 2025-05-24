@@ -1,3 +1,4 @@
+from functools import partial
 from sklearn.metrics import (
     log_loss,
     hinge_loss,
@@ -52,7 +53,7 @@ MUTATION_SET = [
 ]
 
 SELECTION_SET = [
-        {"id": "tournament", "name": "Tournament Selection", "function": selTournament},
+        {"id": "tournament", "name": "Tournament Selection", "function": partial(selTournament, tournsize=5)},
         {"id": "roulette", "name": "Roulette Selection", "function": selRoulette},
         {"id": "best", "name": "Best Selection", "function": selBest},
         {"id": "nsga2", "name": "NSGA-II Selection", "function": selNSGA2},

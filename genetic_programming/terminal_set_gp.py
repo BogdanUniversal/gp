@@ -3,7 +3,7 @@ import numpy as np
 
 
 TERMINALS = [
-    {"id": "true", "name": "True", "type": "Constant", "function": True},
+    {"id": "true", "name": "True", "type": "Constant", "function": True, "out": bool},
     {
         "id": "false",
         "name": "False",

@@ -1,6 +1,8 @@
+# %%
 from functools import partial
 from deap import base, creator, tools
 import numpy as np
+import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import StandardScaler
 from sklearn.model_selection import train_test_split
@@ -9,12 +11,13 @@ import umap
 from general_set import LOSSES_SET, MUTATION_SET, SELECTION_SET
 from deap import gp, algorithms, base, creator, tools
 import itertools
-from genetic_programming.primitive_set_gp import PRIMITIVES
-from genetic_programming.terminal_set_gp import TERMINALS
-from mvc.model.dataset_cache import dataset_cache
-from mvc.model.parameters_cache import parameters_cache
+from primitive_set_gp import PRIMITIVES
+from terminal_set_gp import TERMINALS
 
+# from mvc.model.dataset_cache import dataset_cache
+# from mvc.model.parameters_cache import parameters_cache
 
+# %%
 creator.create("FitnessMin", base.Fitness, weights=(-4.0, -1.0))
 creator.create("Individual", gp.PrimitiveTree, fitness=creator.FitnessMin)
 
@@ -63,21 +66,42 @@ def custom_mutation(rng, mutations, pset, expr, ms, treeDepth):
             selected_mutation["function"],
             gen_func=gp.genHalfAndHalf,
             pset=pset,
-            min_=0,
-            max_=max(4, treeDepth // 3),
+            min=0,
+            max=max(4, treeDepth // 3),
+            ms=ms,
         )
+    elif selected_mutation["id"] == "mutNodeReplacement":
+        return partial(
+            selected_mutation["function"],
+            pset=pset,
+        )
+    elif selected_mutation["id"] == "mutInsert":
+        return partial(
+            selected_mutation["function"],
+            pset=pset,
+        )
+    elif selected_mutation["id"] == "mutShrink":
+        return selected_mutation["function"]
+    else:
+        raise ValueError(f"Unknown mutation type: {selected_mutation['id']}")
 
 
-def run_genetic_algorithm_pipeline(user_id):
-    dataset = dataset_cache.get(str(user_id)).copy()
-    parameters = parameters_cache.get(user_id)
+def run_genetic_algorithm_pipeline(
+    # user_id,
+    dataset,
+    parameters,
+):
+    # dataset = dataset_cache.get(str(user_id)).copy()
+    # parameters = parameters_cache.get(user_id)
 
     seed = np.random.SeedSequence()
+    seed_restricted = int(seed.entropy) % (2**32 - 1)
     rng = np.random.default_rng(seed.entropy)
 
     classificationOk = (
         True
-        if parameters["lossFunction"]["id"] in LOSSES_SET[0] + LOSSES_SET[1]
+        if parameters["lossFunction"]["id"]
+        in [loss["id"] for loss in LOSSES_SET[0] + LOSSES_SET[1]]
         else False
     )
 
@@ -86,11 +110,12 @@ def run_genetic_algorithm_pipeline(user_id):
         dataset[parameters["selectedLabel"]] = label_encoder.fit_transform(
             dataset[parameters["selectedLabel"]]
         )
+    n_labels = len(label_encoder.classes_) if classificationOk else 1
 
     X = dataset.drop(columns=[parameters["selectedLabel"]])
     y = dataset[parameters["selectedLabel"]]
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=seed.entropy
+        X, y, test_size=0.2, random_state=seed_restricted
     )
 
     scalerX = StandardScaler()
@@ -151,11 +176,23 @@ def run_genetic_algorithm_pipeline(user_id):
             dataset.shape[1]
             - 1
             - sum([len(group) for group in correlated_groups])
-            + [getGroupNComponent(group) for group in correlated_groups],
+            + sum([getGroupNComponent(group) for group in correlated_groups]),
         ),
-        float,
+        float if n_labels <= 2 else list,
         "IN",
     )
+
+    if n_labels > 2:
+
+        def vector_output(*inputs):
+            return list(inputs)
+
+        pset.addPrimitive(
+            vector_output,  # Softmax function for multi-class classification
+            [float] * n_labels,  # Takes n_labels float inputs
+            list,  # Returns a list
+            name="vector_output",
+        )
 
     for funParam in parameters["functions"]:
         if funParam["type"] == "Primitive":
@@ -164,11 +201,10 @@ def run_genetic_algorithm_pipeline(user_id):
                 fun["function"],
                 fun["in"],
                 fun["out"],
-                name=fun["name"],
             )
         elif funParam["type"] == "Terminal":
             fun = [f for f in TERMINALS if f["id"] == funParam["id"]][0]
-            pset.addEphemeralConstant(fun["name"], fun["function"], fun["out"])
+            pset.addEphemeralConstant(fun["id"], fun["function"], fun["out"])
         elif funParam["type"] == "Constant":
             fun = [f for f in TERMINALS if f["id"] == funParam["id"]][0]
             pset.addTerminal(fun["function"], fun["out"])
@@ -181,60 +217,132 @@ def run_genetic_algorithm_pipeline(user_id):
     toolbox.register("population", tools.initRepeat, list, toolbox.individual)
     toolbox.register("compile", gp.compile, pset=pset)
 
-    toolbox.register("evaluate", evalSpambase)
+    def sigmoid(x):
+        if x >= 0:
+            z = np.exp(-x)
+            return 1 / (1 + z)
+        else:
+            z = np.exp(x)
+            return z / (1 + z)
+    if "mutSemantic" in [mut["id"] for mut in parameters["mutationFunction"]]:
+        pset.addPrimitive(sigmoid, [float], float, name="lf")
+
+    def softmax(x):
+        # Shift values for numerical stability (prevents overflow)
+        shifted_x = x - np.max(x, axis=-1, keepdims=True)
+        # Calculate exp of shifted values
+        exp_x = np.exp(shifted_x)
+        # Normalize to get probabilities
+        return exp_x / np.sum(exp_x, axis=-1, keepdims=True)
+
+    loss = [
+        loss
+        for loss_group in LOSSES_SET
+        for loss in loss_group
+        if loss["id"] == parameters["lossFunction"]["id"]
+    ][0]
+
+    def evaluate(individual):
+        # Transform the tree expression in a callable function
+        func = toolbox.compile(expr=individual)
+
+        # For multi-label classification
+        if classificationOk:
+            if n_labels > 2:  # Multi-label case
+                y_train_predict = [softmax(func(*row)) for row in X_train_list]
+            else:  # Binary classification case
+                y_train_predict = [sigmoid(func(*row)) for row in X_train_list]
+        else:  # Regression case
+            y_train_predict = [func(*row) for row in X_train_list]
+
+        # Convert predictions and targets to arrays for loss calculation
+        y_train_predict = np.array(y_train_predict)
+        y_train_array = np.array(y_train_list)
+
+        return (loss["function"](y_train_array, y_train_predict), individual.height)
+
+    toolbox.register("evaluate", evaluate)
     toolbox.register(
         "select",
         [s for s in SELECTION_SET if s["id"] == parameters["selectionMethod"]["id"]][0][
             "function"
         ],
-        tournsize=5,
     )
     toolbox.register("mate", gp.cxOnePoint)
     toolbox.register(
         "expr_mut", gp.genHalfAndHalf, min_=0, max_=max(4, parameters["treeDepth"] // 3)
     )
 
-    for mutParam in parameters["mutationFunction"]:
-        mut = [m for m in MUTATION_SET if m["id"] == mutParam["id"]][0]
-        toolbox.register(
-            "mutate",
-            mut["function"],
-            expr=toolbox.expr_mut,
-            pset=pset,
-            **mut.get("kwargs", {}),
-        )
-    toolbox.register("mutate", gp.mutUniform, expr=toolbox.expr_mut, pset=pset)
+    mutations = [
+        m
+        for m in MUTATION_SET
+        if m["id"] in [mut["id"] for mut in parameters["mutationFunction"]]
+    ]
+
+    def custom_mutation_wrapper(
+        individual,
+        rng=rng,
+        mutations=mutations,
+        pset=pset,
+        expr=toolbox.expr_mut,
+        ms=2,
+        treeDepth=parameters["treeDepth"],
+    ):
+        # Get the mutation method
+        mutation_func = custom_mutation(rng, mutations, pset, expr, ms, treeDepth)
+        # Apply it to the individual
+        return mutation_func(individual)
+
+    toolbox.register(
+        "mutate",
+        custom_mutation_wrapper,
+        # rng=rng,
+        # mutations=mutations,
+        # pset=pset,
+        # expr=toolbox.expr_mut,
+        # ms=2,  # NOTE VERIFICA CORECT
+        # treeDepth=parameters["treeDepth"],
+    )
     toolbox.register("mut_shrink", gp.mutShrink)
     toolbox.register("mut_eph", gp.mutEphemeral, mode="all")
 
+    pop = toolbox.population(n=parameters["popSize"])
+
+    hof = tools.HallOfFame(3)
+    stats = tools.Statistics(lambda ind: ind.fitness.values[0])
+    stats.register("avg", np.mean)
+    stats.register("std", np.std)
+    stats.register("min", np.min)
+    stats.register("max", np.max)
+
     # Define the callback function to send updates
-    def update_callback(gen, stats, best_individual):
-        # Extract data to send to frontend
-        update_data = {
-            "generation": gen,
-            "best_fitness": float(stats["min"]),  # Convert numpy types to native Python
-            "avg_fitness": float(stats["avg"]),
-            "std_dev": float(stats["std"]),
-        }
+    # def update_callback(gen, stats, best_individual):
+    #     # Extract data to send to frontend
+    #     update_data = {
+    #         "generation": gen,
+    #         "best_fitness": float(stats["min"]),  # Convert numpy types to native Python
+    #         "avg_fitness": float(stats["avg"]),
+    #         "std_dev": float(stats["std"]),
+    #     }
 
-        # If generation is multiple of 5 or it's the last generation
-        # include the best individual (to reduce data traffic)
-        if gen % 5 == 0 or gen == parameters["ngen"]:
-            update_data["best_individual"] = str(best_individual)
+    #     # If generation is multiple of 5 or it's the last generation
+    #     # include the best individual (to reduce data traffic)
+    #     if gen % 5 == 0 or gen == parameters["ngen"]:
+    #         update_data["best_individual"] = str(best_individual)
 
-        # Send data via WebSocket
-        socketio.emit("training_update", update_data)
+    #     # Send data via WebSocket
+    #     socketio.emit("training_update", update_data)
 
     # Run the algorithm with callback
     eaSimpleWithCallback(
         pop,
         toolbox,
-        parameters["cxpb"],
-        parameters["mutpb"],
-        parameters["ngen"],
+        parameters["crossChance"],
+        parameters["mutationChance"],
+        parameters["genCount"],
         stats,
         halloffame=hof,
-        callback=update_callback,
+        # callback=update_callback,
     )
 
     # Return the final results
@@ -312,3 +420,60 @@ def eaSimpleWithCallback(
             callback(gen, record, best_ind)
 
     return population, logbook
+
+
+params = {
+    "selectedLabel": "gender",
+    "corrOpt": "Spearman",
+    "dimRedOpt": "PCA",
+    "popSize": 50,
+    "genCount": 100,
+    "treeDepth": 10,
+    "crossChance": 0.5,
+    "mutationChance": 0.2,
+    "mutationFunction": [
+        {"id": "mutUniform", "name": "Uniform Mutation"},
+        {"id": "mutSemantic", "name": "Semantic Mutation"},
+        {"id": "mutEphemeral", "name": "Ephemerals Mutation"},
+        {"id": "mutShrink", "name": "Shrink Mutation"},
+        {"id": "mutNodeReplacement", "name": "Node Replacement"},
+        {"id": "mutInsert", "name": "Insert Mutation"},
+    ],
+    "selectionMethod": {"id": "tournament", "name": "Tournament Selection"},
+    "lossFunction": {"id": "bce", "name": "Binary Cross Entropy"},
+    "functions": [
+        {"id": "if", "name": "If Then Else", "type": "Primitive"},
+        {"id": "rand_gauss_0", "name": "Random Normal (0 Mean)", "type": "Terminal"},
+        {"id": "add", "name": "Addition", "type": "Primitive"},
+        {"id": "sub", "name": "Substraction", "type": "Primitive"},
+        {"id": "mul", "name": "Multiplication", "type": "Primitive"},
+        {"id": "div", "name": "Protected Division", "type": "Primitive"},
+        {"id": "and", "name": "And", "type": "Primitive"},
+        {"id": "or", "name": "Or", "type": "Primitive"},
+        {"id": "not", "name": "Not", "type": "Primitive"},
+        {"id": "lt", "name": "Lower Than", "type": "Primitive"},
+        {"id": "eq", "name": "Equal", "type": "Primitive"},
+        {"id": "true", "name": "True", "type": "Constant"},
+        {"id": "false", "name": "False", "type": "Constant"},
+        {"id": "one", "name": "One", "type": "Constant"},
+        {"id": "minus_one", "name": "Minus One", "type": "Constant"},
+        {"id": "rand_unif_100", "name": "Random Uniform (0 - 100)", "type": "Terminal"},
+        {
+            "id": "rand_unif_minus",
+            "name": "Random Uniform (-1 - 1)",
+            "type": "Terminal",
+        },
+        {"id": "rand_wald", "name": "Random Wald (1 Mean)", "type": "Terminal"},
+        {"id": "rand_pareto", "name": "Random Pareto (1 Shape)", "type": "Terminal"},
+        {"id": "rand_poission", "name": "Random Poisson (2 Lam)", "type": "Terminal"},
+    ],
+}
+
+
+dataset = pd.read_csv(r"C:\Users\bogda\Downloads\gender\gender_classification_v7.csv")
+
+
+# %%
+result = run_genetic_algorithm_pipeline(dataset=dataset, parameters=params)
+
+# %%
