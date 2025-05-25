@@ -95,64 +95,23 @@ umap_reducer = umap.UMAP(
     n_components=1, random_state=42, output_metric="euclidean"
 )  # Enable inverse transform
 # Fit the data
-# for group in correlated_groups:
-#     if len(group) > 1:  # Only apply UMAP if the group has more than one feature
-#         umap_reducer = umap_reducer.fit(X[group])
-
-#         # Add UMAP component to the dataset
-#         colName = f"UMAP-{'-'.join(map(str, group))}"
-
-#         X[colName] = umap_reducer.transform(X[group]).flatten()
-
-#         X_train[colName] = umap_reducer.transform(X_train[group]).flatten()
-#         X_train.drop(columns=group, inplace=True)  # Drop the original features
-
-#         X_test[colName] = umap_reducer.transform(X_test[group]).flatten()
-#         # X_test.drop(columns=group, inplace=True)  # Drop the original features
-#     else:
-#         # If the group has only one feature, skip UMAP and retain the feature
-#         print(f"Skipping UMAP for single-feature group: {group}")
-
-
-# for group in correlated_groups:
-#     if len(group) > 1:
-#         # Scale number of components based on group size
-#         n_comp = 2  # Between 1 and 3 components
-        
-#         umap_reducer = umap.UMAP(
-#             n_components=n_comp, 
-#             random_state=42, 
-#             output_metric="euclidean"
-#         )
-        
-#         umap_reducer = umap_reducer.fit(X[group])
-        
-#         # Handle multiple components if n_comp > 1
-#         umap_result = umap_reducer.transform(X[group])
-#         for i in range(n_comp):
-#             colName = f"UMAP-{'-'.join(map(str, group))}-{i}"
-#             X[colName] = umap_result[:, i]
-#             X_train[colName] = umap_reducer.transform(X_train[group])[:, i]
-#             X_test[colName] = umap_reducer.transform(X_test[group])[:, i]
-            
-            
 for group in correlated_groups:
-    if len(group) > 1:
-        # Scale number of components based on group size
-        n_comp = 2  # Between 1 and 3 components
-        
-        umap_reducer = PCA(
-            n_components=n_comp, random_state=42)
-        
+    if len(group) > 1:  # Only apply UMAP if the group has more than one feature
         umap_reducer = umap_reducer.fit(X[group])
-        
-        # Handle multiple components if n_comp > 1
-        umap_result = umap_reducer.transform(X[group])
-        for i in range(n_comp):
-            colName = f"UMAP-{'-'.join(map(str, group))}-{i}"
-            X[colName] = umap_result[:, i]
-            X_train[colName] = umap_reducer.transform(X_train[group])[:, i]
-            X_test[colName] = umap_reducer.transform(X_test[group])[:, i]
+
+        # Add UMAP component to the dataset
+        colName = f"UMAP-{'-'.join(map(str, group))}"
+
+        X[colName] = umap_reducer.transform(X[group]).flatten()
+
+        X_train[colName] = umap_reducer.transform(X_train[group]).flatten()
+        X_train.drop(columns=group, inplace=True)  # Drop the original features
+
+        X_test[colName] = umap_reducer.transform(X_test[group]).flatten()
+        # X_test.drop(columns=group, inplace=True)  # Drop the original features
+    else:
+        # If the group has only one feature, skip UMAP and retain the feature
+        print(f"Skipping UMAP for single-feature group: {group}")
 
 
 # %%
