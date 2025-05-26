@@ -6,7 +6,7 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import StandardScaler
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, TargetEncoder
 import umap
 from general_set import LOSSES_SET, MUTATION_SET, SELECTION_SET
 from deap import gp, algorithms, base, creator, tools
@@ -169,9 +169,8 @@ def custom_mutation(individual, rng, mutations, pset, expr, ms, treeDepth):
 #                 )[:, i]
 #             X_train_standardized.drop(columns=group, inplace=True)
 #             X_test_standardized.drop(columns=group, inplace=True)
-            
 
-            
+
 #     X_train_list = X_train_standardized.values.tolist()
 #     X_test_list = X_test_standardized.values.tolist()
 #     if not classificationOk:
@@ -425,10 +424,10 @@ def eaSimpleWithCallback(
 
 
 params = {
-    "selectedLabel": "gender",
+    "selectedLabel": "sex",
     "corrOpt": "Spearman",
     "dimRedOpt": "UMAP",
-    "popSize": 100 ,
+    "popSize": 100,
     "genCount": 100,
     "treeDepth": 10,
     "crossChance": 0.5,
@@ -474,12 +473,40 @@ params = {
 
 dataset = pd.read_csv(r"C:\Users\bogda\Downloads\gender\gender_classification_v7.csv")
 
+from sklearn.datasets import fetch_openml
+
+# Adult Census Income Dataset
+adult = fetch_openml(name="adult", version=2, as_frame=True)
+dataset = pd.DataFrame(adult.data, columns=adult.feature_names)
+
+
+def identify_categorical_columns(dataset, selected_label):
+    categorical_cols = []
+    for col in dataset.columns:
+        if col == selected_label:
+            continue
+
+        if dataset[col].nunique() <= 20 and dataset[col].nunique() > 2:
+            categorical_cols.append(col)
+            continue
+
+        dtype = dataset[col].dtype
+        if (
+            dtype == "object"
+            or dtype.name == "category"
+            or dtype == "bool"
+            or (np.issubdtype(dtype, np.integer) and dataset[col].nunique() <= 30)
+        ):
+            categorical_cols.append(col)
+    return categorical_cols
+
 
 # %%
 # result = run_genetic_algorithm_pipeline(dataset=dataset, parameters=params)
 
 # %%
 parameters = params
+dataset.dropna(inplace=True)
 
 seed = np.random.SeedSequence()
 seed_restricted = int(seed.entropy) % (2**32 - 1)
@@ -499,13 +526,26 @@ if classificationOk:
     )
 n_labels = len(label_encoder.classes_) if classificationOk else 1
 
+
+target_encode_categorial = TargetEncoder()
+columnsToEncode = identify_categorical_columns(dataset, parameters["selectedLabel"])
+if len(columnsToEncode):
+    target_encode_categorial.fit(
+        dataset[columnsToEncode],
+        dataset[parameters["selectedLabel"]],
+    )
+
 X = dataset.drop(columns=[parameters["selectedLabel"]])
 y = dataset[parameters["selectedLabel"]]
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=seed_restricted
 )
 
-correlation_matrix = X.corr(method=parameters["corrOpt"].lower())
+X_encoded = X.copy()
+X_encoded[columnsToEncode] = target_encode_categorial.transform(
+    X_encoded[columnsToEncode]
+)
+correlation_matrix = X_encoded.corr(method=parameters["corrOpt"].lower())
 correlated_groups = getCorrelatedGroups(correlation_matrix, 0.5)
 
 # %%
@@ -515,13 +555,19 @@ scalerX.set_output(transform="pandas")
 scalerY = StandardScaler()
 scalerY.set_output(transform="pandas")
 
-scalerX.fit(X)
-X_standardized = scalerX.transform(X)
+scalerX.fit(X_encoded)
+X_standardized = scalerX.transform(X_encoded)
 scalerY.fit(y.values.reshape(-1, 1))
 y_standardized = scalerY.transform(y.values.reshape(-1, 1))
 
-X_train_standardized = scalerX.transform(X_train)
-X_test_standardized = scalerX.transform(X_test)
+if len(columnsToEncode):
+    X_train_standardized = X_train.copy()
+    X_test_standardized = X_test.copy()
+    X_train_standardized[columnsToEncode] = target_encode_categorial.transform(X_train_standardized[columnsToEncode])
+    X_test_standardized[columnsToEncode] = target_encode_categorial.transform(X_test_standardized[columnsToEncode])
+X_train_standardized = scalerX.transform(X_train_standardized)
+X_test_standardized = scalerX.transform(X_test_standardized)
+
 
 def getGroupNComponent(group):
     return 1 if len(group) == 2 else 2 if len(group) < 5 else 3
@@ -552,9 +598,8 @@ for group in correlated_groups:
             )[:, i]
         X_train_standardized.drop(columns=group, inplace=True)
         X_test_standardized.drop(columns=group, inplace=True)
-        
 
-        
+
 X_train_list = X_train_standardized.values.tolist()
 X_test_list = X_test_standardized.values.tolist()
 if not classificationOk:
@@ -566,7 +611,7 @@ if not classificationOk:
 else:
     y_train_list = y_train.values.tolist()
     y_test_list = y_test.values.tolist()
-    
+
 # %%
 
 pset = gp.PrimitiveSetTyped(
@@ -715,9 +760,15 @@ eaSimpleWithCallback(
 
 # %%
 
+
 def predict_function(model, data):
     cols = []
-    
+
+    if len(columnsToEncode):
+        data[columnsToEncode] = target_encode_categorial.transform(
+            data[columnsToEncode]
+        )
+
     data_standardized = scalerX.transform(data)  # Standardize the data
     # NOTE MODIFICA PENTRU REDUCERE MULTIPLE
     for group in correlated_groups:
@@ -726,7 +777,9 @@ def predict_function(model, data):
             colName = f"REDUCED-{'-'.join(map(str, group))}-{i}"
             cols.append(colName)
 
-            data_standardized[colName] = reducer.transform(data_standardized[group])[:, i]
+            data_standardized[colName] = reducer.transform(data_standardized[group])[
+                :, i
+            ]
         data_standardized.drop(columns=group, inplace=True)
 
     dataList = data_standardized.values.tolist()
