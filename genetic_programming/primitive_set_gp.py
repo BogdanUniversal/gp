@@ -51,5 +51,6 @@ PRIMITIVES = [
     {"id": "or", "name": "Or", "type": "Primitive", "function": operator.or_, "in": [bool, bool], "out": bool},
     {"id": "not", "name": "Not", "type": "Primitive", "function": operator.not_, "in": [bool], "out": bool},
     {"id": "lt", "name": "Lower Than", "type": "Primitive", "function": operator.lt, "in": [float, float], "out": bool},
+    {"id": "le", "name": "Lower Equal", "type": "Primitive", "function": operator.le, "in": [float, float], "out": bool},
     {"id": "eq", "name": "Equal", "type": "Primitive", "function": operator.eq, "in": [float, float], "out": bool},
 ]

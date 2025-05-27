@@ -21,18 +21,6 @@ from deap.tools import (
     selLexicase,
 )
 
-LOSSES_SET = [
-    [
-        {"id": "bce", "name": "Binary Cross Entropy", "function": log_loss},
-        {"id": "hinge", "name": "Hinge loss", "function": hinge_loss},
-    ],
-    [{"id": "cce", "name": "Categorical Cross Entropy", "function": log_loss}],
-    [
-        {"id": "mse", "name": "Mean Squared Error", "function": mean_squared_error},
-        {"id": "mae", "name": "Mean Absolute Error", "function": mean_absolute_error},
-    ],
-]
-
 CORRELATION_SET = ["Pearson", "Spearman", "Kendall"]
 
 DIMENSIONALITY_REDUCTION_SET = ["PCA", "UMAP"]

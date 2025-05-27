@@ -6,9 +6,10 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import StandardScaler
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import log_loss, mean_squared_error
 from sklearn.preprocessing import LabelEncoder, TargetEncoder
 import umap
-from general_set import LOSSES_SET, MUTATION_SET, SELECTION_SET
+from general_set import MUTATION_SET, SELECTION_SET
 from deap import gp, algorithms, base, creator, tools
 import dalex as dx
 import itertools
@@ -424,9 +425,18 @@ def eaSimpleWithCallback(
 
 
 params = {
-    "selectedLabel": "sex",
+    "selectedFeatures": [
+        "long_hair",
+        "forehead_width_cm",
+        "forehead_height_cm",
+        "nose_wide",
+        "nose_long",
+        "lips_thin",
+        "distance_nose_to_lip_long",
+    ],
+    "selectedLabel": "gender",
     "corrOpt": "Spearman",
-    "dimRedOpt": "UMAP",
+    "dimRedOpt": "PCA",
     "popSize": 100,
     "genCount": 100,
     "treeDepth": 10,
@@ -434,14 +444,13 @@ params = {
     "mutationChance": 0.2,
     "mutationFunction": [
         {"id": "mutUniform", "name": "Uniform Mutation"},
-        # {"id": "mutSemantic", "name": "Semantic Mutation"},
         {"id": "mutEphemeral", "name": "Ephemerals Mutation"},
         {"id": "mutShrink", "name": "Shrink Mutation"},
         {"id": "mutNodeReplacement", "name": "Node Replacement"},
         {"id": "mutInsert", "name": "Insert Mutation"},
     ],
     "selectionMethod": {"id": "tournament", "name": "Tournament Selection"},
-    "lossFunction": {"id": "bce", "name": "Binary Cross Entropy"},
+    "objective": "Classification",
     "functions": [
         {"id": "if", "name": "If Then Else", "type": "Primitive"},
         {"id": "rand_gauss_0", "name": "Random Normal (0 Mean)", "type": "Terminal"},
@@ -453,6 +462,7 @@ params = {
         {"id": "or", "name": "Or", "type": "Primitive"},
         {"id": "not", "name": "Not", "type": "Primitive"},
         {"id": "lt", "name": "Lower Than", "type": "Primitive"},
+        {"id": "le", "name": "Lower Equal", "type": "Primitive"},
         {"id": "eq", "name": "Equal", "type": "Primitive"},
         {"id": "true", "name": "True", "type": "Constant"},
         {"id": "false", "name": "False", "type": "Constant"},
@@ -473,11 +483,11 @@ params = {
 
 dataset = pd.read_csv(r"C:\Users\bogda\Downloads\gender\gender_classification_v7.csv")
 
-from sklearn.datasets import fetch_openml
+# from sklearn.datasets import fetch_openml
 
-# Adult Census Income Dataset
-adult = fetch_openml(name="adult", version=2, as_frame=True)
-dataset = pd.DataFrame(adult.data, columns=adult.feature_names)
+# # Adult Census Income Dataset
+# adult = fetch_openml(name="adult", version=2, as_frame=True)
+# dataset = pd.DataFrame(adult.data, columns=adult.feature_names)
 
 
 def identify_categorical_columns(dataset, selected_label):
@@ -506,28 +516,24 @@ def identify_categorical_columns(dataset, selected_label):
 
 # %%
 parameters = params
+dataset = dataset[parameters["selectedFeatures"] + [parameters["selectedLabel"]]]
 dataset.dropna(inplace=True)
 
 seed = np.random.SeedSequence()
 seed_restricted = int(seed.entropy) % (2**32 - 1)
 rng = np.random.default_rng(seed.entropy)
 
-classificationOk = (
-    True
-    if parameters["lossFunction"]["id"]
-    in [loss["id"] for loss in LOSSES_SET[0] + LOSSES_SET[1]]
-    else False
-)
+classificationOk = True if parameters["objective"] == "Classification" else False
 
 label_encoder = LabelEncoder()
 if classificationOk:
     dataset[parameters["selectedLabel"]] = label_encoder.fit_transform(
         dataset[parameters["selectedLabel"]]
     )
-n_labels = len(label_encoder.classes_) if classificationOk else 1
 
-
-target_encode_categorial = TargetEncoder()
+target_encode_categorial = TargetEncoder(
+    target_type="binary" if classificationOk else "regression"
+)
 columnsToEncode = identify_categorical_columns(dataset, parameters["selectedLabel"])
 if len(columnsToEncode):
     target_encode_categorial.fit(
@@ -535,7 +541,7 @@ if len(columnsToEncode):
         dataset[parameters["selectedLabel"]],
     )
 
-X = dataset.drop(columns=[parameters["selectedLabel"]])
+X = dataset[parameters["selectedFeatures"]].copy()
 y = dataset[parameters["selectedLabel"]]
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=seed_restricted
@@ -545,6 +551,7 @@ X_encoded = X.copy()
 X_encoded[columnsToEncode] = target_encode_categorial.transform(
     X_encoded[columnsToEncode]
 )
+
 correlation_matrix = X_encoded.corr(method=parameters["corrOpt"].lower())
 correlated_groups = getCorrelatedGroups(correlation_matrix, 0.5)
 
@@ -563,8 +570,12 @@ y_standardized = scalerY.transform(y.values.reshape(-1, 1))
 if len(columnsToEncode):
     X_train_standardized = X_train.copy()
     X_test_standardized = X_test.copy()
-    X_train_standardized[columnsToEncode] = target_encode_categorial.transform(X_train_standardized[columnsToEncode])
-    X_test_standardized[columnsToEncode] = target_encode_categorial.transform(X_test_standardized[columnsToEncode])
+    X_train_standardized[columnsToEncode] = target_encode_categorial.transform(
+        X_train_standardized[columnsToEncode]
+    )
+    X_test_standardized[columnsToEncode] = target_encode_categorial.transform(
+        X_test_standardized[columnsToEncode]
+    )
 X_train_standardized = scalerX.transform(X_train_standardized)
 X_test_standardized = scalerX.transform(X_test_standardized)
 
@@ -619,27 +630,14 @@ pset = gp.PrimitiveSetTyped(
     itertools.repeat(
         float,
         (
-            dataset.shape[1]
-            - 1
+            X.shape[1]
             - sum([len(group) for group in correlated_groups])
             + sum([getGroupNComponent(group) for group in correlated_groups])
         ),
     ),
-    float if n_labels <= 2 else list,
+    float,
     "IN",
 )
-
-if n_labels > 2:
-
-    def vector_output(*inputs):
-        return list(inputs)
-
-    pset.addPrimitive(
-        vector_output,  # Softmax function for multi-class classification
-        [float] * n_labels,  # Takes n_labels float inputs
-        list,  # Returns a list
-        name="vector_output",
-    )
 
 for funParam in parameters["functions"]:
     if funParam["type"] == "Primitive":
@@ -674,25 +672,7 @@ def sigmoid(x):
         return z / (1 + z)
 
 
-if "mutSemantic" in [mut["id"] for mut in parameters["mutationFunction"]]:
-    pset.addPrimitive(sigmoid, [float], float, name="lf")
-
-
-def softmax(x):
-    # Shift values for numerical stability (prevents overflow)
-    shifted_x = x - np.max(x, axis=-1, keepdims=True)
-    # Calculate exp of shifted values
-    exp_x = np.exp(shifted_x)
-    # Normalize to get probabilities
-    return exp_x / np.sum(exp_x, axis=-1, keepdims=True)
-
-
-loss = [
-    loss
-    for loss_group in LOSSES_SET
-    for loss in loss_group
-    if loss["id"] == parameters["lossFunction"]["id"]
-][0]
+loss = log_loss if classificationOk else mean_squared_error
 
 
 def evaluate(individual):
@@ -700,16 +680,13 @@ def evaluate(individual):
     func = toolbox.compile(expr=individual)
     # For multi-label classification
     if classificationOk:
-        if n_labels > 2:  # Multi-label case
-            y_train_predict = [softmax(func(*row)) for row in X_train_list]
-        else:  # Binary classification case
-            y_train_predict = [sigmoid(func(*row)) for row in X_train_list]
+        y_train_predict = [sigmoid(func(*row)) for row in X_train_list]
     else:  # Regression case
         y_train_predict = [func(*row) for row in X_train_list]
     # Convert predictions and targets to arrays for loss calculation
     y_train_predict = np.array(y_train_predict)
     y_train_array = np.array(y_train_list)
-    return (loss["function"](y_train_array, y_train_predict), individual.height)
+    return (loss(y_train_array, y_train_predict), individual.height)
 
 
 toolbox.register("evaluate", evaluate)

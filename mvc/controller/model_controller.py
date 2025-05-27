@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
-from mvc.view.model_view import getLossFunctions, getTerminalsPrimitives
+from mvc.view.model_view import getTerminalsPrimitives
 from mvc.view.user_view import getUser
 from mvc.model.parameters_cache import parameters_cache
 from genetic_programming.primitive_set_gp import PRIMITIVES
@@ -8,7 +8,6 @@ from genetic_programming.terminal_set_gp import TERMINALS
 from genetic_programming.general_set import (
     CORRELATION_SET,
     DIMENSIONALITY_REDUCTION_SET,
-    LOSSES_SET,
     MUTATION_SET,
     SELECTION_SET,
 )
@@ -60,13 +59,11 @@ def setParametersRoute():
 
         okParameters = True
 
+        if args["selectedFeatures"] == []:
+            okParameters = False
         if args["selectedLabel"] == "":
             okParameters = False
         if args["corrOpt"] not in CORRELATION_SET:
-            okParameters = False
-        if args["lossFunction"]["id"] not in [
-            loss["id"] for loss_group in LOSSES_SET for loss in loss_group
-        ]:
             okParameters = False
         if args["dimRedOpt"] not in DIMENSIONALITY_REDUCTION_SET:
             okParameters = False
@@ -101,6 +98,8 @@ def setParametersRoute():
                 for x in args["functions"]
             ]
         ):
+            okParameters = False
+        if args["objective"] not in ["Classification", "Regression"]:
             okParameters = False
 
         if okParameters == False:

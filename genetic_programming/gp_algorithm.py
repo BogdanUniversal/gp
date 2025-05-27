@@ -7,7 +7,7 @@ from sklearn.discriminant_analysis import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, TargetEncoder
 import umap
-from general_set import LOSSES_SET, MUTATION_SET, SELECTION_SET
+from general_set import MUTATION_SET, SELECTION_SET
 from deap import gp, algorithms, base, creator, tools
 import dalex as dx
 import itertools
@@ -420,7 +420,7 @@ def algorithm(params, dataset):
         stats,
         halloffame=hof,
     )
-    return hof[0]
+    return hof[0], toolbox
     
     
     
@@ -433,7 +433,7 @@ def algorithm(params, dataset):
     
 # %%
 params = {
-    "selectedLabel": "hours-per-week",
+    "selectedLabel": "age",
     "corrOpt": "Spearman",
     "dimRedOpt": "PCA",
     "popSize": 100,
@@ -443,7 +443,6 @@ params = {
     "mutationChance": 0.2,
     "mutationFunction": [
         {"id": "mutUniform", "name": "Uniform Mutation"},
-        # {"id": "mutSemantic", "name": "Semantic Mutation"},
         {"id": "mutEphemeral", "name": "Ephemerals Mutation"},
         {"id": "mutShrink", "name": "Shrink Mutation"},
         {"id": "mutNodeReplacement", "name": "Node Replacement"},
@@ -480,12 +479,13 @@ params = {
 }
 
 
+#%%
 from sklearn.datasets import fetch_openml
 
-# Adult Census Income Dataset
 adult = fetch_openml(name="adult", version=2, as_frame=True)
 dataset = pd.DataFrame(adult.data, columns=adult.feature_names)
+# dataset = pd.read_csv(r"C:\Users\bogda\Downloads\gender\gender_classification_v7.csv")
 
-a = algorithm(params, dataset)
+hof, toolbox = algorithm(params, dataset)
 
 # %%
