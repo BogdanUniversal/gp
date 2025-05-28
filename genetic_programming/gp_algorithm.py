@@ -4,15 +4,16 @@ import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import StandardScaler
+from sklearn.metrics import log_loss, mean_squared_error
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, TargetEncoder
 import umap
-from general_set import MUTATION_SET, SELECTION_SET
+from genetic_programming.general_set import MUTATION_SET, SELECTION_SET
 from deap import gp, algorithms, base, creator, tools
 import dalex as dx
 import itertools
-from primitive_set_gp import PRIMITIVES
-from terminal_set_gp import TERMINALS
+from genetic_programming.primitive_set_gp import PRIMITIVES
+from genetic_programming.terminal_set_gp import TERMINALS
 
 
 def getCorrelatedGroups(correlation_matrix, threshold=0.6):
@@ -21,7 +22,6 @@ def getCorrelatedGroups(correlation_matrix, threshold=0.6):
     for i in range(len(correlation_matrix.columns)):
         for j in range(i + 1, len(correlation_matrix.columns)):
             if abs(correlation_matrix.iloc[i, j]) > threshold:
-                # Find or create a group for the correlated columns
                 for group in correlated_groups:
                     if (
                         correlation_matrix.columns[i] in group
@@ -47,24 +47,13 @@ def getCorrelatedGroups(correlation_matrix, threshold=0.6):
     return [list(group) for group in correlated_groups]
 
 
-def custom_mutation(individual, rng, mutations, pset, expr, ms, treeDepth):
-    """Apply a randomly selected mutation operator to an individual."""
+def custom_mutation(individual, rng, mutations, pset, expr):
     selected_mutation = rng.choice(mutations)
 
-    # Apply the selected mutation directly and return its result
     if selected_mutation["id"] == "mutUniform":
         return selected_mutation["function"](individual, expr=expr, pset=pset)
     elif selected_mutation["id"] == "mutEphemeral":
         return selected_mutation["function"](individual, mode="all")
-    elif selected_mutation["id"] == "mutSemantic":
-        return selected_mutation["function"](
-            individual,
-            gen_func=gp.genHalfAndHalf,
-            pset=pset,
-            min=0,
-            max=max(4, treeDepth // 3),
-            ms=ms,
-        )
     elif selected_mutation["id"] == "mutNodeReplacement":
         return selected_mutation["function"](
             individual,
@@ -81,8 +70,8 @@ def custom_mutation(individual, rng, mutations, pset, expr, ms, treeDepth):
         )
     else:
         raise ValueError(f"Unknown mutation type: {selected_mutation['id']}")
-    
-    
+
+
 def identify_categorical_columns(dataset, selected_label):
     categorical_cols = []
     for col in dataset.columns:
@@ -102,7 +91,7 @@ def identify_categorical_columns(dataset, selected_label):
         ):
             categorical_cols.append(col)
     return categorical_cols
-    
+
 
 def eaSimpleWithCallback(
     population,
@@ -175,30 +164,27 @@ def eaSimpleWithCallback(
     return population, logbook
 
 
-def algorithm(params, dataset):
+def algorithm(params, datasetCache):
+    dataset = datasetCache.copy()
     parameters = params
+    dataset = dataset[parameters["selectedFeatures"] + [parameters["selectedLabel"]]]
     dataset.dropna(inplace=True)
 
     seed = np.random.SeedSequence()
     seed_restricted = int(seed.entropy) % (2**32 - 1)
     rng = np.random.default_rng(seed.entropy)
 
-    classificationOk = (
-        True
-        if parameters["lossFunction"]["id"]
-        in [loss["id"] for loss in LOSSES_SET[0] + LOSSES_SET[1]]
-        else False
-    )
+    classificationOk = True if parameters["objective"] == "Classification" else False
 
     label_encoder = LabelEncoder()
     if classificationOk:
         dataset[parameters["selectedLabel"]] = label_encoder.fit_transform(
             dataset[parameters["selectedLabel"]]
         )
-    n_labels = len(label_encoder.classes_) if classificationOk else 1
 
-
-    target_encode_categorial = TargetEncoder()
+    target_encode_categorial = TargetEncoder(
+        target_type="binary" if classificationOk else "continuous"
+    )
     columnsToEncode = identify_categorical_columns(dataset, parameters["selectedLabel"])
     if len(columnsToEncode):
         target_encode_categorial.fit(
@@ -206,7 +192,7 @@ def algorithm(params, dataset):
             dataset[parameters["selectedLabel"]],
         )
 
-    X = dataset.drop(columns=[parameters["selectedLabel"]])
+    X = dataset[parameters["selectedFeatures"]].copy()
     y = dataset[parameters["selectedLabel"]]
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=seed_restricted
@@ -218,8 +204,6 @@ def algorithm(params, dataset):
     )
     correlation_matrix = X_encoded.corr(method=parameters["corrOpt"].lower())
     correlated_groups = getCorrelatedGroups(correlation_matrix, 0.5)
-
-    # %%
 
     scalerX = StandardScaler()
     scalerX.set_output(transform="pandas")
@@ -234,15 +218,17 @@ def algorithm(params, dataset):
     if len(columnsToEncode):
         X_train_standardized = X_train.copy()
         X_test_standardized = X_test.copy()
-        X_train_standardized[columnsToEncode] = target_encode_categorial.transform(X_train_standardized[columnsToEncode])
-        X_test_standardized[columnsToEncode] = target_encode_categorial.transform(X_test_standardized[columnsToEncode])
+        X_train_standardized[columnsToEncode] = target_encode_categorial.transform(
+            X_train_standardized[columnsToEncode]
+        )
+        X_test_standardized[columnsToEncode] = target_encode_categorial.transform(
+            X_test_standardized[columnsToEncode]
+        )
     X_train_standardized = scalerX.transform(X_train_standardized)
     X_test_standardized = scalerX.transform(X_test_standardized)
 
-
     def getGroupNComponent(group):
         return 1 if len(group) == 2 else 2 if len(group) < 5 else 3
-
 
     for group in correlated_groups:
         if len(group) > 1:
@@ -270,7 +256,6 @@ def algorithm(params, dataset):
             X_train_standardized.drop(columns=group, inplace=True)
             X_test_standardized.drop(columns=group, inplace=True)
 
-
     X_train_list = X_train_standardized.values.tolist()
     X_test_list = X_test_standardized.values.tolist()
     if not classificationOk:
@@ -290,27 +275,14 @@ def algorithm(params, dataset):
         itertools.repeat(
             float,
             (
-                dataset.shape[1]
-                - 1
+                X.shape[1]
                 - sum([len(group) for group in correlated_groups])
                 + sum([getGroupNComponent(group) for group in correlated_groups])
             ),
         ),
-        float if n_labels <= 2 else list,
+        float,
         "IN",
     )
-
-    if n_labels > 2:
-
-        def vector_output(*inputs):
-            return list(inputs)
-
-        pset.addPrimitive(
-            vector_output,  # Softmax function for multi-class classification
-            [float] * n_labels,  # Takes n_labels float inputs
-            list,  # Returns a list
-            name="vector_output",
-        )
 
     for funParam in parameters["functions"]:
         if funParam["type"] == "Primitive":
@@ -351,30 +323,20 @@ def algorithm(params, dataset):
         exp_x = np.exp(shifted_x)
         return exp_x / np.sum(exp_x, axis=-1, keepdims=True)
 
-    loss = [
-        loss
-        for loss_group in LOSSES_SET
-        for loss in loss_group
-        if loss["id"] == parameters["lossFunction"]["id"]
-    ][0]
-
+    loss = log_loss if classificationOk else mean_squared_error
 
     def evaluate(individual):
         # Transform the tree expression in a callable function
         func = toolbox.compile(expr=individual)
         # For multi-label classification
         if classificationOk:
-            if n_labels > 2:  # Multi-label case
-                y_train_predict = [softmax(func(*row)) for row in X_train_list]
-            else:  # Binary classification case
-                y_train_predict = [sigmoid(func(*row)) for row in X_train_list]
+            y_train_predict = [sigmoid(func(*row)) for row in X_train_list]
         else:  # Regression case
             y_train_predict = [func(*row) for row in X_train_list]
         # Convert predictions and targets to arrays for loss calculation
         y_train_predict = np.array(y_train_predict)
         y_train_array = np.array(y_train_list)
-        return (loss["function"](y_train_array, y_train_predict), individual.height)
-
+        return (loss(y_train_array, y_train_predict), individual.height)
 
     toolbox.register("evaluate", evaluate)
     toolbox.register(
@@ -400,17 +362,18 @@ def algorithm(params, dataset):
             mutations=mutations,
             pset=pset,
             expr=toolbox.expr_mut,
-            ms=2,
-            treeDepth=parameters["treeDepth"],
         ),
     )
+    
     pop = toolbox.population(n=parameters["popSize"])
     hof = tools.HallOfFame(3)
+    
     stats = tools.Statistics(lambda ind: ind.fitness.values[0])
     stats.register("avg", np.mean)
     stats.register("std", np.std)
     stats.register("min", np.min)
     stats.register("max", np.max)
+    
     eaSimpleWithCallback(
         pop,
         toolbox,
@@ -421,71 +384,73 @@ def algorithm(params, dataset):
         halloffame=hof,
     )
     return hof[0], toolbox
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-# %%
-params = {
-    "selectedLabel": "age",
-    "corrOpt": "Spearman",
-    "dimRedOpt": "PCA",
-    "popSize": 100,
-    "genCount": 100,
-    "treeDepth": 10,
-    "crossChance": 0.5,
-    "mutationChance": 0.2,
-    "mutationFunction": [
-        {"id": "mutUniform", "name": "Uniform Mutation"},
-        {"id": "mutEphemeral", "name": "Ephemerals Mutation"},
-        {"id": "mutShrink", "name": "Shrink Mutation"},
-        {"id": "mutNodeReplacement", "name": "Node Replacement"},
-        {"id": "mutInsert", "name": "Insert Mutation"},
-    ],
-    "selectionMethod": {"id": "tournament", "name": "Tournament Selection"},
-    "lossFunction": {"id": "mse", "name": "Mean Squared Error"},
-    "functions": [
-        {"id": "if", "name": "If Then Else", "type": "Primitive"},
-        {"id": "rand_gauss_0", "name": "Random Normal (0 Mean)", "type": "Terminal"},
-        {"id": "add", "name": "Addition", "type": "Primitive"},
-        {"id": "sub", "name": "Substraction", "type": "Primitive"},
-        {"id": "mul", "name": "Multiplication", "type": "Primitive"},
-        {"id": "div", "name": "Protected Division", "type": "Primitive"},
-        {"id": "and", "name": "And", "type": "Primitive"},
-        {"id": "or", "name": "Or", "type": "Primitive"},
-        {"id": "not", "name": "Not", "type": "Primitive"},
-        {"id": "lt", "name": "Lower Than", "type": "Primitive"},
-        {"id": "eq", "name": "Equal", "type": "Primitive"},
-        {"id": "true", "name": "True", "type": "Constant"},
-        {"id": "false", "name": "False", "type": "Constant"},
-        {"id": "one", "name": "One", "type": "Constant"},
-        {"id": "minus_one", "name": "Minus One", "type": "Constant"},
-        {"id": "rand_unif_100", "name": "Random Uniform (0 - 100)", "type": "Terminal"},
-        {
-            "id": "rand_unif_minus",
-            "name": "Random Uniform (-1 - 1)",
-            "type": "Terminal",
-        },
-        {"id": "rand_wald", "name": "Random Wald (1 Mean)", "type": "Terminal"},
-        {"id": "rand_pareto", "name": "Random Pareto (1 Shape)", "type": "Terminal"},
-        {"id": "rand_poission", "name": "Random Poisson (2 Lam)", "type": "Terminal"},
-    ],
-}
 
 
-#%%
-from sklearn.datasets import fetch_openml
+# # %%
+# params = {
+#     "selectedFeatures": [
+#         "long_hair",
+#         "forehead_width_cm",
+#         "forehead_height_cm",
+#         "nose_wide",
+#         "nose_long",
+#         "lips_thin",
+#         "distance_nose_to_lip_long",
+#     ],
+#     "selectedLabel": "gender",
+#     "corrOpt": "Spearman",
+#     "dimRedOpt": "PCA",
+#     "popSize": 100,
+#     "genCount": 100,
+#     "treeDepth": 10,
+#     "crossChance": 0.5,
+#     "mutationChance": 0.2,
+#     "mutationFunction": [
+#         {"id": "mutUniform", "name": "Uniform Mutation"},
+#         {"id": "mutEphemeral", "name": "Ephemerals Mutation"},
+#         {"id": "mutShrink", "name": "Shrink Mutation"},
+#         {"id": "mutNodeReplacement", "name": "Node Replacement"},
+#         {"id": "mutInsert", "name": "Insert Mutation"},
+#     ],
+#     "selectionMethod": {"id": "tournament", "name": "Tournament Selection"},
+#     "objective": "Classification",
+#     "functions": [
+#         {"id": "if", "name": "If Then Else", "type": "Primitive"},
+#         {"id": "rand_gauss_0", "name": "Random Normal (0 Mean)", "type": "Terminal"},
+#         {"id": "add", "name": "Addition", "type": "Primitive"},
+#         {"id": "sub", "name": "Substraction", "type": "Primitive"},
+#         {"id": "mul", "name": "Multiplication", "type": "Primitive"},
+#         {"id": "div", "name": "Protected Division", "type": "Primitive"},
+#         {"id": "and", "name": "And", "type": "Primitive"},
+#         {"id": "or", "name": "Or", "type": "Primitive"},
+#         {"id": "not", "name": "Not", "type": "Primitive"},
+#         {"id": "lt", "name": "Lower Than", "type": "Primitive"},
+#         {"id": "le", "name": "Lower Equal", "type": "Primitive"},
+#         {"id": "eq", "name": "Equal", "type": "Primitive"},
+#         {"id": "true", "name": "True", "type": "Constant"},
+#         {"id": "false", "name": "False", "type": "Constant"},
+#         {"id": "one", "name": "One", "type": "Constant"},
+#         {"id": "minus_one", "name": "Minus One", "type": "Constant"},
+#         {"id": "rand_unif_100", "name": "Random Uniform (0 - 100)", "type": "Terminal"},
+#         {
+#             "id": "rand_unif_minus",
+#             "name": "Random Uniform (-1 - 1)",
+#             "type": "Terminal",
+#         },
+#         {"id": "rand_wald", "name": "Random Wald (1 Mean)", "type": "Terminal"},
+#         {"id": "rand_pareto", "name": "Random Pareto (1 Shape)", "type": "Terminal"},
+#         {"id": "rand_poission", "name": "Random Poisson (2 Lam)", "type": "Terminal"},
+#     ],
+# }
 
-adult = fetch_openml(name="adult", version=2, as_frame=True)
-dataset = pd.DataFrame(adult.data, columns=adult.feature_names)
-# dataset = pd.read_csv(r"C:\Users\bogda\Downloads\gender\gender_classification_v7.csv")
 
-hof, toolbox = algorithm(params, dataset)
+# # %%
+# # from sklearn.datasets import fetch_openml
 
-# %%
+# # adult = fetch_openml(name="adult", version=2, as_frame=True)
+# # dataset = pd.DataFrame(adult.data, columns=adult.feature_names)
+# # dataset = pd.read_csv(r"C:\Users\bogda\Downloads\gender\gender_classification_v7.csv")
+
+# # hof, toolbox = algorithm(params, dataset)
+
+# # %%

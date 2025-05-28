@@ -1,5 +1,8 @@
+from functools import partial
+import threading
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
+from mvc.model.dataset_cache import dataset_cache
 from mvc.view.model_view import getTerminalsPrimitives
 from mvc.view.user_view import getUser
 from mvc.model.parameters_cache import parameters_cache
@@ -11,28 +14,9 @@ from genetic_programming.general_set import (
     MUTATION_SET,
     SELECTION_SET,
 )
+from genetic_programming.gp_algorithm import algorithm
 
 modelBp = Blueprint("model", __name__)
-
-
-@modelBp.route("/get_loss_functions", methods=["GET"])
-@jwt_required()
-def getLossFunctionsRoute():
-    try:
-        args = request.args
-
-        currentUser = get_jwt_identity()
-        currentUserId = getUser(currentUser).id
-
-        labelColumn = args.get("label")
-
-        lossFunctions = getLossFunctions(currentUserId, labelColumn)
-
-        return jsonify(
-            [{"id": fun.get("id"), "name": fun.get("name")} for fun in lossFunctions]
-        )
-    except:
-        return jsonify({"loss": "No loss functions found!"}), 402
 
 
 @modelBp.route("/get_terminals_primitives", methods=["GET"])
@@ -109,10 +93,35 @@ def setParametersRoute():
         currentUserId = getUser(currentUser).id
 
         parameters_cache.set(currentUserId, args)
-        print(f"Parameters set for user {currentUserId}: {args}")
-        # Here you would typically save these parameters to a database or use them in your application logic
-        # For demonstration purposes, we'll just return them in the response
 
         return jsonify({"parameters": "Parameters set sucessfully!"})
     except:
         return jsonify({"error": "Failed to set parameters!"}), 402
+
+
+@modelBp.route("/train_model", methods=["GET"])
+@jwt_required()
+def trainModelRoute():
+    try:
+        currentUser = get_jwt_identity()
+        currentUserId = getUser(currentUser).id
+
+        parameters = parameters_cache.get(currentUserId)
+        dataset = dataset_cache.get(currentUserId)
+
+        if not parameters or not dataset:
+            return jsonify({"error": "No parameters/dataset set!"}), 402
+
+        print(f"Training model for user {currentUserId} with parameters: {parameters}")
+
+        training_thread = threading.Thread(
+            target=partial(algorithm, parameters, dataset)
+        )
+        training_thread.daemon = (
+            True  # This makes the thread exit when the main program exits
+        )
+        training_thread.start()
+
+        return jsonify({"message": "Model training started successfully!"})
+    except:
+        return jsonify({"error": "Failed to start model training!"}), 402
