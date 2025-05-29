@@ -92,7 +92,7 @@ def setParametersRoute():
         currentUser = get_jwt_identity()
         currentUserId = getUser(currentUser).id
 
-        parameters_cache.set(currentUserId, args)
+        parameters_cache.set(str(currentUserId), args)
 
         return jsonify({"parameters": "Parameters set sucessfully!"})
     except:
@@ -106,16 +106,16 @@ def trainModelRoute():
         currentUser = get_jwt_identity()
         currentUserId = getUser(currentUser).id
 
-        parameters = parameters_cache.get(currentUserId)
-        dataset = dataset_cache.get(currentUserId)
+        parameters = parameters_cache.get(str(currentUserId))
+        dataset = dataset_cache.get(str(currentUserId))
 
-        if not parameters or not dataset:
+        if parameters is None or dataset is None:
             return jsonify({"error": "No parameters/dataset set!"}), 402
 
-        print(f"Training model for user {currentUserId} with parameters: {parameters}")
+        # print(f"Training model for user {str(currentUserId)} with parameters: {parameters}, and dataset: {dataset.head(1)}")
 
         training_thread = threading.Thread(
-            target=partial(algorithm, parameters, dataset)
+            target=partial(algorithm, currentUserId, parameters, dataset)
         )
         training_thread.daemon = (
             True  # This makes the thread exit when the main program exits

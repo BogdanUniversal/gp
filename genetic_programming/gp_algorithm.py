@@ -1,5 +1,4 @@
 from functools import partial
-from deap import base, creator, tools
 import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
@@ -9,11 +8,12 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, TargetEncoder
 import umap
 from genetic_programming.general_set import MUTATION_SET, SELECTION_SET
-from deap import gp, algorithms, base, creator, tools
+from deap import gp, algorithms, creator, base, tools
 import dalex as dx
 import itertools
 from genetic_programming.primitive_set_gp import PRIMITIVES
 from genetic_programming.terminal_set_gp import TERMINALS
+from mvc.model.socket import socket_cache
 
 
 def getCorrelatedGroups(correlation_matrix, threshold=0.6):
@@ -93,7 +93,23 @@ def identify_categorical_columns(dataset, selected_label):
     return categorical_cols
 
 
+def update_callback(userId, gen, stats):
+    update_data = {
+        "generation": gen,
+        "best_fitness": float(stats["min"]),
+        "avg_fitness": float(stats["avg"]),
+        "std_dev": float(stats["std"]),
+    }
+
+    socket_cache.emit(
+        userId,
+        "training_update",
+        update_data,
+    )
+
+
 def eaSimpleWithCallback(
+    userId,
     population,
     toolbox,
     cxpb,
@@ -101,7 +117,7 @@ def eaSimpleWithCallback(
     ngen,
     stats=None,
     halloffame=None,
-    callback=None,
+    callback=True,
     verbose=True,
 ):
     """This algorithm reproduces the simplest evolutionary algorithm with real-time callback updates.
@@ -126,8 +142,8 @@ def eaSimpleWithCallback(
 
     # Call the callback with initial generation data
     if callback:
-        best_ind = tools.selBest(population, 1)[0] if population else None
-        callback(0, record, best_ind)
+        # best_ind = tools.selBest(population, 1)[0] if population else None
+        update_callback(userId, 0, record)
 
     # Begin the generational process
     for gen in range(1, ngen + 1):
@@ -158,15 +174,15 @@ def eaSimpleWithCallback(
 
         # Call the callback with updated data
         if callback:
-            best_ind = tools.selBest(population, 1)[0] if population else None
-            callback(gen, record, best_ind)
+            # best_ind = tools.selBest(population, 1)[0] if population else None
+            update_callback(userId, gen, record)
 
     return population, logbook
 
 
-def algorithm(params, datasetCache):
-    dataset = datasetCache.copy()
-    parameters = params
+def algorithm(userId, paramsCached, datasetCached):
+    dataset = datasetCached.copy()
+    parameters = paramsCached
     dataset = dataset[parameters["selectedFeatures"] + [parameters["selectedLabel"]]]
     dataset.dropna(inplace=True)
 
@@ -268,8 +284,11 @@ def algorithm(params, datasetCache):
         y_train_list = y_train.values.tolist()
         y_test_list = y_test.values.tolist()
 
-    creator.create("FitnessMin", base.Fitness, weights=(-4.0, -1.0))
-    creator.create("Individual", gp.PrimitiveTree, fitness=creator.FitnessMin)
+    if not hasattr(creator, "FitnessMin"):
+        creator.create("FitnessMin", base.Fitness, weights=(-4.0, -1.0))
+    if not hasattr(creator, "Individual"):
+        creator.create("Individual", gp.PrimitiveTree, fitness=creator.FitnessMin)
+
     pset = gp.PrimitiveSetTyped(
         "MAIN",
         itertools.repeat(
@@ -364,17 +383,18 @@ def algorithm(params, datasetCache):
             expr=toolbox.expr_mut,
         ),
     )
-    
+
     pop = toolbox.population(n=parameters["popSize"])
     hof = tools.HallOfFame(3)
-    
+
     stats = tools.Statistics(lambda ind: ind.fitness.values[0])
     stats.register("avg", np.mean)
     stats.register("std", np.std)
     stats.register("min", np.min)
     stats.register("max", np.max)
-    
+
     eaSimpleWithCallback(
+        userId,
         pop,
         toolbox,
         parameters["crossChance"],
@@ -384,73 +404,3 @@ def algorithm(params, datasetCache):
         halloffame=hof,
     )
     return hof[0], toolbox
-
-
-# # %%
-# params = {
-#     "selectedFeatures": [
-#         "long_hair",
-#         "forehead_width_cm",
-#         "forehead_height_cm",
-#         "nose_wide",
-#         "nose_long",
-#         "lips_thin",
-#         "distance_nose_to_lip_long",
-#     ],
-#     "selectedLabel": "gender",
-#     "corrOpt": "Spearman",
-#     "dimRedOpt": "PCA",
-#     "popSize": 100,
-#     "genCount": 100,
-#     "treeDepth": 10,
-#     "crossChance": 0.5,
-#     "mutationChance": 0.2,
-#     "mutationFunction": [
-#         {"id": "mutUniform", "name": "Uniform Mutation"},
-#         {"id": "mutEphemeral", "name": "Ephemerals Mutation"},
-#         {"id": "mutShrink", "name": "Shrink Mutation"},
-#         {"id": "mutNodeReplacement", "name": "Node Replacement"},
-#         {"id": "mutInsert", "name": "Insert Mutation"},
-#     ],
-#     "selectionMethod": {"id": "tournament", "name": "Tournament Selection"},
-#     "objective": "Classification",
-#     "functions": [
-#         {"id": "if", "name": "If Then Else", "type": "Primitive"},
-#         {"id": "rand_gauss_0", "name": "Random Normal (0 Mean)", "type": "Terminal"},
-#         {"id": "add", "name": "Addition", "type": "Primitive"},
-#         {"id": "sub", "name": "Substraction", "type": "Primitive"},
-#         {"id": "mul", "name": "Multiplication", "type": "Primitive"},
-#         {"id": "div", "name": "Protected Division", "type": "Primitive"},
-#         {"id": "and", "name": "And", "type": "Primitive"},
-#         {"id": "or", "name": "Or", "type": "Primitive"},
-#         {"id": "not", "name": "Not", "type": "Primitive"},
-#         {"id": "lt", "name": "Lower Than", "type": "Primitive"},
-#         {"id": "le", "name": "Lower Equal", "type": "Primitive"},
-#         {"id": "eq", "name": "Equal", "type": "Primitive"},
-#         {"id": "true", "name": "True", "type": "Constant"},
-#         {"id": "false", "name": "False", "type": "Constant"},
-#         {"id": "one", "name": "One", "type": "Constant"},
-#         {"id": "minus_one", "name": "Minus One", "type": "Constant"},
-#         {"id": "rand_unif_100", "name": "Random Uniform (0 - 100)", "type": "Terminal"},
-#         {
-#             "id": "rand_unif_minus",
-#             "name": "Random Uniform (-1 - 1)",
-#             "type": "Terminal",
-#         },
-#         {"id": "rand_wald", "name": "Random Wald (1 Mean)", "type": "Terminal"},
-#         {"id": "rand_pareto", "name": "Random Pareto (1 Shape)", "type": "Terminal"},
-#         {"id": "rand_poission", "name": "Random Poisson (2 Lam)", "type": "Terminal"},
-#     ],
-# }
-
-
-# # %%
-# # from sklearn.datasets import fetch_openml
-
-# # adult = fetch_openml(name="adult", version=2, as_frame=True)
-# # dataset = pd.DataFrame(adult.data, columns=adult.feature_names)
-# # dataset = pd.read_csv(r"C:\Users\bogda\Downloads\gender\gender_classification_v7.csv")
-
-# # hof, toolbox = algorithm(params, dataset)
-
-# # %%

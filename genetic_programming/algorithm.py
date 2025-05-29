@@ -317,23 +317,23 @@ def custom_mutation(individual, rng, mutations, pset, expr, ms, treeDepth):
 #     stats.register("min", np.min)
 #     stats.register("max", np.max)
 
-#     # Define the callback function to send updates
-#     # def update_callback(gen, stats, best_individual):
-#     #     # Extract data to send to frontend
-#     #     update_data = {
-#     #         "generation": gen,
-#     #         "best_fitness": float(stats["min"]),  # Convert numpy types to native Python
-#     #         "avg_fitness": float(stats["avg"]),
-#     #         "std_dev": float(stats["std"]),
-#     #     }
+    # Define the callback function to send updates
+    def update_callback(gen, stats, best_individual):
+        # Extract data to send to frontend
+        update_data = {
+            "generation": gen,
+            "best_fitness": float(stats["min"]),  # Convert numpy types to native Python
+            "avg_fitness": float(stats["avg"]),
+            "std_dev": float(stats["std"]),
+        }
 
-#     #     # If generation is multiple of 5 or it's the last generation
-#     #     # include the best individual (to reduce data traffic)
-#     #     if gen % 5 == 0 or gen == parameters["ngen"]:
-#     #         update_data["best_individual"] = str(best_individual)
+        # If generation is multiple of 5 or it's the last generation
+        # include the best individual (to reduce data traffic)
+        if gen % 5 == 0 or gen == parameters["ngen"]:
+            update_data["best_individual"] = str(best_individual)
 
-#     #     # Send data via WebSocket
-#     #     socketio.emit("training_update", update_data)
+        # Send data via WebSocket
+        socketio.emit("training_update", update_data)
 
 #     # Run the algorithm with callback
 #     eaSimpleWithCallback(

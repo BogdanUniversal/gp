@@ -1,19 +1,23 @@
 from datetime import datetime, timedelta, timezone
-from flask import Flask
+from flask import Flask, request
 from flask_cors import CORS
 from flask_jwt_extended import (
     JWTManager,
     create_access_token,
     get_jwt,
     get_jwt_identity,
+    jwt_required,
     set_access_cookies,
 )
 from flask_migrate import Migrate
+from flask_socketio import SocketIO
 from config.config import Config
 from mvc.controller.user_controller import userBp
 from mvc.controller.dataset_controller import datasetBp
 from mvc.controller.model_controller import modelBp
-from extensions import db
+from extensions import db, socketio
+from mvc.model.socket import socket_cache
+from mvc.view.user_view import getUser
 
 
 app = Flask(__name__)
@@ -21,32 +25,46 @@ app.config.from_object(Config)
 
 jwt = JWTManager(app)
 
-# CORS(
-#     app,
-#     supports_credentials=True,
-#     origins=["http://localhost:3000"],
-#     resources={r"/*": {"origins": "http://localhost:3000"}},
-# )
+CORS(
+    app,
+    supports_credentials=True,
+    origins=["http://localhost:3000"],
+    resources={r"/*": {"origins": "http://localhost:3000"}},
+)
 
-CORS(app, 
-     supports_credentials=True,
-     resources={
-         r"/*": {
-             "origins": ["http://localhost:3000"],
-             "allow_headers": ["Content-Type", "X-CSRF-TOKEN"],
-             "expose_headers": ["Content-Type", "X-CSRF-TOKEN"]
-         }
-     })
+# CORS(app,
+#      supports_credentials=True,
+#      resources={
+#          r"/*": {
+#              "origins": ["http://localhost:3000"],
+#              "allow_headers": ["Content-Type", "X-CSRF-TOKEN"],
+#              "expose_headers": ["Content-Type", "X-CSRF-TOKEN"]
+#          }
+#      })
+
+# CORS(app,resources={r"/*":{"origins":"*"}})
 
 db.init_app(app)
 
 # with app.app_context():
 #     db.create_all()
 migrate = Migrate(app, db)
+socketio.init_app(app, cors_allowed_origins="http://localhost:3000", cors_credentials=True)
 
 app.register_blueprint(userBp, url_prefix="/users")
 app.register_blueprint(datasetBp, url_prefix="/datasets")
 app.register_blueprint(modelBp, url_prefix="/models")
+
+
+@socketio.on("connect", namespace="/train/train")
+@jwt_required()
+def handle_connect():
+    user = get_jwt_identity()
+    user_id = getUser(user).id
+    socket_cache.set(
+        str(user_id), request.sid
+    )
+    print(f"Socket cache updated for user {user_id} with sid {request.sid}")
 
 
 @app.after_request
@@ -99,4 +117,5 @@ def refresh_expiring_jwts(response):
 #     return response
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # app.run(debug=True)
+    socketio.run(app, debug=True)
