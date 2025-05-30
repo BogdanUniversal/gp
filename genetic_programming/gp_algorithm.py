@@ -96,9 +96,10 @@ def identify_categorical_columns(dataset, selected_label):
 def update_callback(userId, gen, stats):
     update_data = {
         "generation": gen,
-        "best_fitness": float(stats["min"]),
-        "avg_fitness": float(stats["avg"]),
-        "std_dev": float(stats["std"]),
+        "best_fitness": round(float(stats["min"]), 4),
+        "avg_fitness": round(float(stats["avg"]), 4),
+        "max_fitness": round(float(stats["max"]), 4),
+        "std_dev": round(float(stats["std"]), 4),
     }
 
     socket_cache.emit(

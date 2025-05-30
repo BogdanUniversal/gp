@@ -13,6 +13,7 @@ class User(db.Model):
     last_name = db.Column(TEXT, nullable=False)
     password = db.Column(TEXT, nullable=False)
     datasets = relationship("Dataset", backref="user", cascade="all, delete-orphan")
+    models = relationship("Model", backref="user", cascade="all, delete-orphan")
 
     
     def __init__(self, email, firstName, lastName, password):
