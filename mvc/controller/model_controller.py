@@ -3,7 +3,7 @@ import threading
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from mvc.model.dataset_cache import dataset_cache
-from mvc.view.model_view import getTerminalsPrimitives
+from mvc.view.model_view import createModel, getTerminalsPrimitives
 from mvc.view.user_view import getUser
 from mvc.model.parameters_cache import parameters_cache
 from genetic_programming.primitive_set_gp import PRIMITIVES
@@ -99,28 +99,26 @@ def setParametersRoute():
         return jsonify({"error": "Failed to set parameters!"}), 402
 
 
-@modelBp.route("/train_model", methods=["GET"])
+@modelBp.route("/train_model", methods=["POST"])
 @jwt_required()
 def trainModelRoute():
     try:
         currentUser = get_jwt_identity()
         currentUserId = getUser(currentUser).id
+        
+        args = request.get_json()
+        dataset_id = args.get("dataset_id")
+        model_name = args.get("model_name")
+        
+        model = createModel(
+            user_id=currentUserId,
+            dataset_id=dataset_id,
+            model_name=model_name,
+        )
 
-        parameters = parameters_cache.get(str(currentUserId))
-        dataset = dataset_cache.get(str(currentUserId))
-
-        if parameters is None or dataset is None:
+        if not model:
             return jsonify({"error": "No parameters/dataset set!"}), 402
 
-        # print(f"Training model for user {str(currentUserId)} with parameters: {parameters}, and dataset: {dataset.head(1)}")
-
-        training_thread = threading.Thread(
-            target=partial(algorithm, currentUserId, parameters, dataset)
-        )
-        training_thread.daemon = (
-            True  # This makes the thread exit when the main program exits
-        )
-        training_thread.start()
 
         return jsonify({"message": "Model training started successfully!"})
     except:

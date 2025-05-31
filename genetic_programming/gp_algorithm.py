@@ -1,4 +1,5 @@
 from functools import partial
+import dill
 import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
@@ -14,6 +15,9 @@ import itertools
 from genetic_programming.primitive_set_gp import PRIMITIVES
 from genetic_programming.terminal_set_gp import TERMINALS
 from mvc.model.socket import socket_cache
+from mvc.model.model import Model
+# from mvc.model.dataset_cache import dataset_cache
+import os
 
 
 def getCorrelatedGroups(correlation_matrix, threshold=0.6):
@@ -181,9 +185,20 @@ def eaSimpleWithCallback(
     return population, logbook
 
 
-def algorithm(userId, paramsCached, datasetCached):
+def sigmoid(x):
+    if x >= 0:
+        z = np.exp(-x)
+        return 1 / (1 + z)
+    else:
+        z = np.exp(x)
+        return z / (1 + z)
+
+
+def algorithm(model: Model, datasetCached: pd.DataFrame):
+    # dataset = dataset_cache.get(str(model.user_id)).copy()
     dataset = datasetCached.copy()
-    parameters = paramsCached
+    parameters = model.parameters
+
     dataset = dataset[parameters["selectedFeatures"] + [parameters["selectedLabel"]]]
     dataset.dropna(inplace=True)
 
@@ -247,6 +262,7 @@ def algorithm(userId, paramsCached, datasetCached):
     def getGroupNComponent(group):
         return 1 if len(group) == 2 else 2 if len(group) < 5 else 3
 
+    reducers = []
     for group in correlated_groups:
         if len(group) > 1:
             n_comp = getGroupNComponent(group)
@@ -261,7 +277,8 @@ def algorithm(userId, paramsCached, datasetCached):
             )
             reducer = reducer.fit(X_standardized[group])
             result = reducer.transform(X_standardized[group])
-
+            reducers.append(reducer)
+            
             for i in range(n_comp):
                 colName = f"REDUCED-{'-'.join(map(str, group))}-{i}"
                 X_train_standardized[colName] = reducer.transform(
@@ -327,22 +344,6 @@ def algorithm(userId, paramsCached, datasetCached):
     toolbox.register("population", tools.initRepeat, list, toolbox.individual)
     toolbox.register("compile", gp.compile, pset=pset)
 
-    def sigmoid(x):
-        if x >= 0:
-            z = np.exp(-x)
-            return 1 / (1 + z)
-        else:
-            z = np.exp(x)
-            return z / (1 + z)
-
-    if "mutSemantic" in [mut["id"] for mut in parameters["mutationFunction"]]:
-        pset.addPrimitive(sigmoid, [float], float, name="lf")
-
-    def softmax(x):
-        shifted_x = x - np.max(x, axis=-1, keepdims=True)
-        exp_x = np.exp(shifted_x)
-        return exp_x / np.sum(exp_x, axis=-1, keepdims=True)
-
     loss = log_loss if classificationOk else mean_squared_error
 
     def evaluate(individual):
@@ -395,7 +396,7 @@ def algorithm(userId, paramsCached, datasetCached):
     stats.register("max", np.max)
 
     eaSimpleWithCallback(
-        userId,
+        model.user_id,
         pop,
         toolbox,
         parameters["crossChance"],
@@ -404,4 +405,171 @@ def algorithm(userId, paramsCached, datasetCached):
         stats,
         halloffame=hof,
     )
-    return hof[0], toolbox
+    
+    predictor = create_prediction_function(
+        classificationOk,
+        toolbox,
+        columnsToEncode,
+        correlated_groups,
+        target_encode_categorial,
+        scalerX,
+        scalerY,
+        reducers,
+        getGroupNComponent,
+    )
+    
+    X_test_predict = X_test.copy()
+    
+    explainer = dx.Explainer(
+    model=hof[0],
+    data=X_test_predict,
+    y=y_test,
+    predict_function=predictor,
+    model_type="classification" if classificationOk else "regression",
+    label="Genetic Programming Model",
+    )
+    
+    performance = explainer.model_performance(model_type="classification" if classificationOk else "regression")
+    fig_performance = performance.plot(show=False).to_html(full_html=True, include_plotlyjs="cdn")
+    
+    single_explanation = explainer.predict_parts(X_test_predict.iloc[0], type="shap")
+    fig_single_explanation = single_explanation.plot(show=False).to_html(full_html=True, include_plotlyjs="cdn")
+    
+    profile = explainer.model_profile(random_state=seed_restricted)
+    fig_profile = profile.plot(show=False).to_html(full_html=True, include_plotlyjs="cdn")
+    
+    saveModel(
+        model,
+        hof[0],
+        predictor,
+        fig_performance,
+        fig_single_explanation,
+        fig_profile,
+    )
+    
+    return hof[0]
+    
+
+def saveModel(
+    model,
+    best_individual,
+    predictor,
+    fig_performance,
+    fig_single_explanation,
+    fig_profile,
+):
+    try:
+        if (
+            not model
+            or not best_individual
+            or not predictor
+            or not fig_performance
+            or not fig_single_explanation
+            or not fig_profile
+        ):
+            return False
+        modelId = str(model.id)
+
+        os.makedirs(f"models/{modelId}", exist_ok=True)
+
+        with open(f"models/{modelId}/model.pkl", "wb") as f:
+            dill.dump(best_individual, f)
+        
+        with open(f"models/{modelId}/predictor.pkl", "wb") as f:
+            dill.dump(predictor, f)
+            
+        with open(f"models/{modelId}/fig_performance.html", "w", encoding="utf-8") as f:
+            f.write(fig_performance)
+            
+        with open(f"models/{modelId}/fig_single_explanation.html", "w", encoding="utf-8") as f:
+            f.write(fig_single_explanation)
+            
+        with open(f"models/{modelId}/fig_profile.html", "w", encoding="utf-8") as f:
+            f.write(fig_profile)
+            
+        # model.setResourcesPath(f"models/{modelId}")
+
+
+        return True
+    except Exception as e:
+        print(f"Error saving model: {e}")
+        return False
+
+
+# def predict_function(
+#     model,
+#     data,
+#     toolbox,
+#     columnsToEncode,
+#     correlated_groups,
+#     target_encode_categorial,
+#     scalerX,
+#     reducers,
+#     getGroupNComponent,
+# ):
+#     cols = []
+
+#     if len(columnsToEncode):
+#         data[columnsToEncode] = target_encode_categorial.transform(
+#             data[columnsToEncode]
+#         )
+
+#     data_standardized = scalerX.transform(data)
+#     for index, group  in enumerate(correlated_groups):
+#         reducer = reducers[index]
+#         n_comp = getGroupNComponent(group)
+#         for i in range(n_comp):
+#             colName = f"REDUCED-{'-'.join(map(str, group))}-{i}"
+#             cols.append(colName)
+
+#             data_standardized[colName] = reducer.transform(data_standardized[group])[
+#                 :, i
+#             ]
+#         data_standardized.drop(columns=group, inplace=True)
+
+#     dataList = data_standardized.values.tolist()
+#     func = toolbox.compile(model[0])  # Compile the best individual
+#     return np.array([sigmoid(func(*row)) for row in dataList])
+
+
+def create_prediction_function(
+    classificationOk,
+    toolbox,
+    columnsToEncode,
+    correlated_groups,
+    target_encode_categorial,
+    scalerX,
+    scalerY,
+    reducers,
+    getGroupNComponent,
+):
+    def predict(model, dataOriginal):
+        data = dataOriginal.copy()
+
+        if len(columnsToEncode):
+            data[columnsToEncode] = target_encode_categorial.transform(
+                data[columnsToEncode]
+            )
+
+        data_standardized = scalerX.transform(data)  # Standardize the data
+
+        for index, group in enumerate(correlated_groups):
+            reducer = reducers[index]
+            n_comp = getGroupNComponent(group)
+            for i in range(n_comp):
+                colName = f"REDUCED-{'-'.join(map(str, group))}-{i}"
+                data_standardized[colName] = reducer.transform(
+                    data_standardized[group]
+                )[:, i]
+            data_standardized.drop(columns=group, inplace=True)
+
+        dataList = data_standardized.values.tolist()
+        func = toolbox.compile(model)
+        
+        if classificationOk:
+            return np.array([sigmoid(func(*row)) for row in dataList])
+        else:
+            predictions = np.array([func(*row) for row in dataList])
+            return scalerY.inverse_transform(predictions.reshape(-1, 1)).flatten()
+
+    return predict

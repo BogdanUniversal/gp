@@ -92,230 +92,227 @@ def custom_mutation(individual, rng, mutations, pset, expr, ms, treeDepth):
     else:
         raise ValueError(f"Unknown mutation type: {selected_mutation['id']}")
 
+    # def run_genetic_algorithm_pipeline(
+    #     # user_id,
+    #     dataset,
+    #     parameters,
+    # ):
+    #     # dataset = dataset_cache.get(str(user_id)).copy()
+    #     # parameters = parameters_cache.get(user_id)
 
-# def run_genetic_algorithm_pipeline(
-#     # user_id,
-#     dataset,
-#     parameters,
-# ):
-#     # dataset = dataset_cache.get(str(user_id)).copy()
-#     # parameters = parameters_cache.get(user_id)
+    #     seed = np.random.SeedSequence()
+    #     seed_restricted = int(seed.entropy) % (2**32 - 1)
+    #     rng = np.random.default_rng(seed.entropy)
 
-#     seed = np.random.SeedSequence()
-#     seed_restricted = int(seed.entropy) % (2**32 - 1)
-#     rng = np.random.default_rng(seed.entropy)
+    #     classificationOk = (
+    #         True
+    #         if parameters["lossFunction"]["id"]
+    #         in [loss["id"] for loss in LOSSES_SET[0] + LOSSES_SET[1]]
+    #         else False
+    #     )
 
-#     classificationOk = (
-#         True
-#         if parameters["lossFunction"]["id"]
-#         in [loss["id"] for loss in LOSSES_SET[0] + LOSSES_SET[1]]
-#         else False
-#     )
+    #     label_encoder = LabelEncoder()
+    #     if classificationOk:
+    #         dataset[parameters["selectedLabel"]] = label_encoder.fit_transform(
+    #             dataset[parameters["selectedLabel"]]
+    #         )
+    #     n_labels = len(label_encoder.classes_) if classificationOk else 1
 
-#     label_encoder = LabelEncoder()
-#     if classificationOk:
-#         dataset[parameters["selectedLabel"]] = label_encoder.fit_transform(
-#             dataset[parameters["selectedLabel"]]
-#         )
-#     n_labels = len(label_encoder.classes_) if classificationOk else 1
+    #     X = dataset.drop(columns=[parameters["selectedLabel"]])
+    #     y = dataset[parameters["selectedLabel"]]
+    #     X_train, X_test, y_train, y_test = train_test_split(
+    #         X, y, test_size=0.2, random_state=seed_restricted
+    #     )
 
-#     X = dataset.drop(columns=[parameters["selectedLabel"]])
-#     y = dataset[parameters["selectedLabel"]]
-#     X_train, X_test, y_train, y_test = train_test_split(
-#         X, y, test_size=0.2, random_state=seed_restricted
-#     )
+    #     correlation_matrix = X.corr(method=parameters["corrOpt"].lower())
+    #     correlated_groups = getCorrelatedGroups(correlation_matrix, 0.5)
 
-#     correlation_matrix = X.corr(method=parameters["corrOpt"].lower())
-#     correlated_groups = getCorrelatedGroups(correlation_matrix, 0.5)
+    #     scalerX = StandardScaler()
+    #     scalerX.set_output(transform="pandas")
+    #     scalerY = StandardScaler()
+    #     scalerY.set_output(transform="pandas")
 
-#     scalerX = StandardScaler()
-#     scalerX.set_output(transform="pandas")
-#     scalerY = StandardScaler()
-#     scalerY.set_output(transform="pandas")
+    #     scalerX.fit(X)
+    #     X_standardized = scalerX.transform(X)
+    #     scalerY.fit(y.values.reshape(-1, 1))
+    #     y_standardized = scalerY.transform(y.values.reshape(-1, 1))
 
-#     scalerX.fit(X)
-#     X_standardized = scalerX.transform(X)
-#     scalerY.fit(y.values.reshape(-1, 1))
-#     y_standardized = scalerY.transform(y.values.reshape(-1, 1))
+    #     X_train_standardized = scalerX.transform(X_train)
+    #     X_test_standardized = scalerX.transform(X_test)
 
-#     X_train_standardized = scalerX.transform(X_train)
-#     X_test_standardized = scalerX.transform(X_test)
+    #     def getGroupNComponent(group):
+    #         return 1 if len(group) == 2 else 2 if len(group) < 5 else 3
 
-#     def getGroupNComponent(group):
-#         return 1 if len(group) == 2 else 2 if len(group) < 5 else 3
+    #     for group in correlated_groups:
+    #         if len(group) > 1:
+    #             n_comp = getGroupNComponent(group)
+    #             reducer = (
+    #                 umap.UMAP(
+    #                     n_components=n_comp,
+    #                     random_state=seed_restricted,
+    #                     output_metric="euclidean",  # CHECK IF CORRECT NOTE
+    #                 )
+    #                 if parameters["dimRedOpt"] == "UMAP"
+    #                 else PCA(n_components=n_comp, random_state=seed_restricted)
+    #             )
+    #             reducer = reducer.fit(X_standardized[group])
+    #             result = reducer.transform(X_standardized[group])
 
+    #             for i in range(n_comp):
+    #                 colName = f"REDUCED-{'-'.join(map(str, group))}-{i}"
+    #                 X_train_standardized[colName] = reducer.transform(
+    #                     X_train_standardized[group]
+    #                 )[:, i]
+    #                 X_test_standardized[colName] = reducer.transform(
+    #                     X_test_standardized[group]
+    #                 )[:, i]
+    #             X_train_standardized.drop(columns=group, inplace=True)
+    #             X_test_standardized.drop(columns=group, inplace=True)
 
-#     for group in correlated_groups:
-#         if len(group) > 1:
-#             n_comp = getGroupNComponent(group)
-#             reducer = (
-#                 umap.UMAP(
-#                     n_components=n_comp,
-#                     random_state=seed_restricted,
-#                     output_metric="euclidean",  # CHECK IF CORRECT NOTE
-#                 )
-#                 if parameters["dimRedOpt"] == "UMAP"
-#                 else PCA(n_components=n_comp, random_state=seed_restricted)
-#             )
-#             reducer = reducer.fit(X_standardized[group])
-#             result = reducer.transform(X_standardized[group])
+    #     X_train_list = X_train_standardized.values.tolist()
+    #     X_test_list = X_test_standardized.values.tolist()
+    #     if not classificationOk:
+    #         scalerY.fit(y.values.reshape(-1, 1))
+    #         y_train_standardized = scalerY.transform(y_train.values.reshape(-1, 1))
+    #         y_test_standardized = scalerY.transform(y_test.values.reshape(-1, 1))
+    #         y_train_list = y_train_standardized.values.tolist()
+    #         y_test_list = y_test_standardized.values.tolist()
+    #     else:
+    #         y_train_list = y_train.values.tolist()
+    #         y_test_list = y_test.values.tolist()
 
-#             for i in range(n_comp):
-#                 colName = f"REDUCED-{'-'.join(map(str, group))}-{i}"
-#                 X_train_standardized[colName] = reducer.transform(
-#                     X_train_standardized[group]
-#                 )[:, i]
-#                 X_test_standardized[colName] = reducer.transform(
-#                     X_test_standardized[group]
-#                 )[:, i]
-#             X_train_standardized.drop(columns=group, inplace=True)
-#             X_test_standardized.drop(columns=group, inplace=True)
+    #     pset = gp.PrimitiveSetTyped(
+    #         "MAIN",
+    #         itertools.repeat(
+    #             float,
+    #             (dataset.shape[1]
+    #             - 1
+    #             - sum([len(group) for group in correlated_groups])
+    #             + sum([getGroupNComponent(group) for group in correlated_groups])),
+    #         ),
+    #         float if n_labels <= 2 else list,
+    #         "IN",
+    #     )
 
+    #     if n_labels > 2:
 
-#     X_train_list = X_train_standardized.values.tolist()
-#     X_test_list = X_test_standardized.values.tolist()
-#     if not classificationOk:
-#         scalerY.fit(y.values.reshape(-1, 1))
-#         y_train_standardized = scalerY.transform(y_train.values.reshape(-1, 1))
-#         y_test_standardized = scalerY.transform(y_test.values.reshape(-1, 1))
-#         y_train_list = y_train_standardized.values.tolist()
-#         y_test_list = y_test_standardized.values.tolist()
-#     else:
-#         y_train_list = y_train.values.tolist()
-#         y_test_list = y_test.values.tolist()
+    #         def vector_output(*inputs):
+    #             return list(inputs)
 
-#     pset = gp.PrimitiveSetTyped(
-#         "MAIN",
-#         itertools.repeat(
-#             float,
-#             (dataset.shape[1]
-#             - 1
-#             - sum([len(group) for group in correlated_groups])
-#             + sum([getGroupNComponent(group) for group in correlated_groups])),
-#         ),
-#         float if n_labels <= 2 else list,
-#         "IN",
-#     )
+    #         pset.addPrimitive(
+    #             vector_output,  # Softmax function for multi-class classification
+    #             [float] * n_labels,  # Takes n_labels float inputs
+    #             list,  # Returns a list
+    #             name="vector_output",
+    #         )
 
-#     if n_labels > 2:
+    #     for funParam in parameters["functions"]:
+    #         if funParam["type"] == "Primitive":
+    #             fun = [f for f in PRIMITIVES if f["id"] == funParam["id"]][0]
+    #             pset.addPrimitive(
+    #                 fun["function"],
+    #                 fun["in"],
+    #                 fun["out"],
+    #             )
+    #         elif funParam["type"] == "Terminal":
+    #             fun = [f for f in TERMINALS if f["id"] == funParam["id"]][0]
+    #             pset.addEphemeralConstant(fun["id"], fun["function"], fun["out"])
+    #         elif funParam["type"] == "Constant":
+    #             fun = [f for f in TERMINALS if f["id"] == funParam["id"]][0]
+    #             pset.addTerminal(fun["function"], fun["out"])
 
-#         def vector_output(*inputs):
-#             return list(inputs)
+    #     toolbox = base.Toolbox()
+    #     toolbox.register(
+    #         "expr", gp.genHalfAndHalf, pset=pset, min_=1, max_=parameters["treeDepth"]
+    #     )
+    #     toolbox.register("individual", tools.initIterate, creator.Individual, toolbox.expr)
+    #     toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+    #     toolbox.register("compile", gp.compile, pset=pset)
 
-#         pset.addPrimitive(
-#             vector_output,  # Softmax function for multi-class classification
-#             [float] * n_labels,  # Takes n_labels float inputs
-#             list,  # Returns a list
-#             name="vector_output",
-#         )
+    #     def sigmoid(x):
+    #         if x >= 0:
+    #             z = np.exp(-x)
+    #             return 1 / (1 + z)
+    #         else:
+    #             z = np.exp(x)
+    #             return z / (1 + z)
 
-#     for funParam in parameters["functions"]:
-#         if funParam["type"] == "Primitive":
-#             fun = [f for f in PRIMITIVES if f["id"] == funParam["id"]][0]
-#             pset.addPrimitive(
-#                 fun["function"],
-#                 fun["in"],
-#                 fun["out"],
-#             )
-#         elif funParam["type"] == "Terminal":
-#             fun = [f for f in TERMINALS if f["id"] == funParam["id"]][0]
-#             pset.addEphemeralConstant(fun["id"], fun["function"], fun["out"])
-#         elif funParam["type"] == "Constant":
-#             fun = [f for f in TERMINALS if f["id"] == funParam["id"]][0]
-#             pset.addTerminal(fun["function"], fun["out"])
+    #     if "mutSemantic" in [mut["id"] for mut in parameters["mutationFunction"]]:
+    #         pset.addPrimitive(sigmoid, [float], float, name="lf")
 
-#     toolbox = base.Toolbox()
-#     toolbox.register(
-#         "expr", gp.genHalfAndHalf, pset=pset, min_=1, max_=parameters["treeDepth"]
-#     )
-#     toolbox.register("individual", tools.initIterate, creator.Individual, toolbox.expr)
-#     toolbox.register("population", tools.initRepeat, list, toolbox.individual)
-#     toolbox.register("compile", gp.compile, pset=pset)
+    #     def softmax(x):
+    #         # Shift values for numerical stability (prevents overflow)
+    #         shifted_x = x - np.max(x, axis=-1, keepdims=True)
+    #         # Calculate exp of shifted values
+    #         exp_x = np.exp(shifted_x)
+    #         # Normalize to get probabilities
+    #         return exp_x / np.sum(exp_x, axis=-1, keepdims=True)
 
-#     def sigmoid(x):
-#         if x >= 0:
-#             z = np.exp(-x)
-#             return 1 / (1 + z)
-#         else:
-#             z = np.exp(x)
-#             return z / (1 + z)
+    #     loss = [
+    #         loss
+    #         for loss_group in LOSSES_SET
+    #         for loss in loss_group
+    #         if loss["id"] == parameters["lossFunction"]["id"]
+    #     ][0]
 
-#     if "mutSemantic" in [mut["id"] for mut in parameters["mutationFunction"]]:
-#         pset.addPrimitive(sigmoid, [float], float, name="lf")
+    #     def evaluate(individual):
+    #         # Transform the tree expression in a callable function
+    #         func = toolbox.compile(expr=individual)
 
-#     def softmax(x):
-#         # Shift values for numerical stability (prevents overflow)
-#         shifted_x = x - np.max(x, axis=-1, keepdims=True)
-#         # Calculate exp of shifted values
-#         exp_x = np.exp(shifted_x)
-#         # Normalize to get probabilities
-#         return exp_x / np.sum(exp_x, axis=-1, keepdims=True)
+    #         # For multi-label classification
+    #         if classificationOk:
+    #             if n_labels > 2:  # Multi-label case
+    #                 y_train_predict = [softmax(func(*row)) for row in X_train_list]
+    #             else:  # Binary classification case
+    #                 y_train_predict = [sigmoid(func(*row)) for row in X_train_list]
+    #         else:  # Regression case
+    #             y_train_predict = [func(*row) for row in X_train_list]
 
-#     loss = [
-#         loss
-#         for loss_group in LOSSES_SET
-#         for loss in loss_group
-#         if loss["id"] == parameters["lossFunction"]["id"]
-#     ][0]
+    #         # Convert predictions and targets to arrays for loss calculation
+    #         y_train_predict = np.array(y_train_predict)
+    #         y_train_array = np.array(y_train_list)
 
-#     def evaluate(individual):
-#         # Transform the tree expression in a callable function
-#         func = toolbox.compile(expr=individual)
+    #         return (loss["function"](y_train_array, y_train_predict), individual.height)
 
-#         # For multi-label classification
-#         if classificationOk:
-#             if n_labels > 2:  # Multi-label case
-#                 y_train_predict = [softmax(func(*row)) for row in X_train_list]
-#             else:  # Binary classification case
-#                 y_train_predict = [sigmoid(func(*row)) for row in X_train_list]
-#         else:  # Regression case
-#             y_train_predict = [func(*row) for row in X_train_list]
+    #     toolbox.register("evaluate", evaluate)
+    #     toolbox.register(
+    #         "select",
+    #         [s for s in SELECTION_SET if s["id"] == parameters["selectionMethod"]["id"]][0][
+    #             "function"
+    #         ],
+    #     )
+    #     toolbox.register("mate", gp.cxOnePoint)
+    #     toolbox.register(
+    #         "expr_mut", gp.genHalfAndHalf, min_=0, max_=max(4, parameters["treeDepth"] // 3)
+    #     )
 
-#         # Convert predictions and targets to arrays for loss calculation
-#         y_train_predict = np.array(y_train_predict)
-#         y_train_array = np.array(y_train_list)
+    #     mutations = [
+    #         m
+    #         for m in MUTATION_SET
+    #         if m["id"] in [mut["id"] for mut in parameters["mutationFunction"]]
+    #     ]
 
-#         return (loss["function"](y_train_array, y_train_predict), individual.height)
+    #     toolbox.register(
+    #         "mutate",
+    #         partial(
+    #             custom_mutation,
+    #             rng=rng,
+    #             mutations=mutations,
+    #             pset=pset,
+    #             expr=toolbox.expr_mut,
+    #             ms=2,
+    #             treeDepth=parameters["treeDepth"],
+    #         ),
+    #     )
 
-#     toolbox.register("evaluate", evaluate)
-#     toolbox.register(
-#         "select",
-#         [s for s in SELECTION_SET if s["id"] == parameters["selectionMethod"]["id"]][0][
-#             "function"
-#         ],
-#     )
-#     toolbox.register("mate", gp.cxOnePoint)
-#     toolbox.register(
-#         "expr_mut", gp.genHalfAndHalf, min_=0, max_=max(4, parameters["treeDepth"] // 3)
-#     )
+    #     pop = toolbox.population(n=parameters["popSize"])
 
-#     mutations = [
-#         m
-#         for m in MUTATION_SET
-#         if m["id"] in [mut["id"] for mut in parameters["mutationFunction"]]
-#     ]
-
-#     toolbox.register(
-#         "mutate",
-#         partial(
-#             custom_mutation,
-#             rng=rng,
-#             mutations=mutations,
-#             pset=pset,
-#             expr=toolbox.expr_mut,
-#             ms=2,
-#             treeDepth=parameters["treeDepth"],
-#         ),
-#     )
-
-#     pop = toolbox.population(n=parameters["popSize"])
-
-#     hof = tools.HallOfFame(3)
-#     stats = tools.Statistics(lambda ind: ind.fitness.values[0])
-#     stats.register("avg", np.mean)
-#     stats.register("std", np.std)
-#     stats.register("min", np.min)
-#     stats.register("max", np.max)
+    #     hof = tools.HallOfFame(3)
+    #     stats = tools.Statistics(lambda ind: ind.fitness.values[0])
+    #     stats.register("avg", np.mean)
+    #     stats.register("std", np.std)
+    #     stats.register("min", np.min)
+    #     stats.register("max", np.max)
 
     # Define the callback function to send updates
     def update_callback(gen, stats, best_individual):
@@ -334,6 +331,7 @@ def custom_mutation(individual, rng, mutations, pset, expr, ms, treeDepth):
 
         # Send data via WebSocket
         socketio.emit("training_update", update_data)
+
 
 #     # Run the algorithm with callback
 #     eaSimpleWithCallback(
@@ -583,7 +581,7 @@ X_test_standardized = scalerX.transform(X_test_standardized)
 def getGroupNComponent(group):
     return 1 if len(group) == 2 else 2 if len(group) < 5 else 3
 
-
+reducers = []
 for group in correlated_groups:
     if len(group) > 1:
         n_comp = getGroupNComponent(group)
@@ -598,7 +596,8 @@ for group in correlated_groups:
         )
         reducer = reducer.fit(X_standardized[group])
         result = reducer.transform(X_standardized[group])
-
+        reducers.append(reducer)
+        
         for i in range(n_comp):
             colName = f"REDUCED-{'-'.join(map(str, group))}-{i}"
             X_train_standardized[colName] = reducer.transform(
@@ -738,48 +737,96 @@ eaSimpleWithCallback(
 # %%
 
 
-def predict_function(model, data):
-    cols = []
+# def predict_function(model, data):
+#     cols = []
 
-    if len(columnsToEncode):
-        data[columnsToEncode] = target_encode_categorial.transform(
-            data[columnsToEncode]
-        )
+#     if len(columnsToEncode):
+#         data[columnsToEncode] = target_encode_categorial.transform(
+#             data[columnsToEncode]
+#         )
 
-    data_standardized = scalerX.transform(data)  # Standardize the data
-    # NOTE MODIFICA PENTRU REDUCERE MULTIPLE
-    for group in correlated_groups:
-        n_comp = getGroupNComponent(group)
-        for i in range(n_comp):
-            colName = f"REDUCED-{'-'.join(map(str, group))}-{i}"
-            cols.append(colName)
+#     data_standardized = scalerX.transform(data)  # Standardize the data
+#     # NOTE MODIFICA PENTRU REDUCERE MULTIPLE
+#     for group in correlated_groups:
+#         n_comp = getGroupNComponent(group)
+#         for i in range(n_comp):
+#             colName = f"REDUCED-{'-'.join(map(str, group))}-{i}"
+#             cols.append(colName)
 
-            data_standardized[colName] = reducer.transform(data_standardized[group])[
-                :, i
-            ]
-        data_standardized.drop(columns=group, inplace=True)
+#             data_standardized[colName] = reducer.transform(data_standardized[group])[
+#                 :, i
+#             ]
+#         data_standardized.drop(columns=group, inplace=True)
 
-    dataList = data_standardized.values.tolist()
-    func = toolbox.compile(model[0])  # Compile the best individual
-    return np.array([sigmoid(func(*row)) for row in dataList])
+#     dataList = data_standardized.values.tolist()
+#     func = toolbox.compile(model[0])  # Compile the best individual
+#     return np.array([sigmoid(func(*row)) for row in dataList])
+
+
+def create_prediction_function(
+    toolbox,
+    columnsToEncode,
+    correlated_groups,
+    target_encode_categorial,
+    scalerX,
+    reducers,
+    getGroupNComponent,
+):
+    """Create a model-specific prediction function that only requires data as input"""
+
+    def predict(model, dataOriginal):
+        """Simplified prediction function that only needs data"""
+        # Process data just like in predict_function
+        data = dataOriginal.copy()
+        
+        if len(columnsToEncode):
+            data[columnsToEncode] = target_encode_categorial.transform(
+                data[columnsToEncode]
+            )
+
+        data_standardized = scalerX.transform(data)  # Standardize the data
+
+        for index, group in enumerate(correlated_groups):
+            reducer = reducers[index]
+            n_comp = getGroupNComponent(group)
+            for i in range(n_comp):
+                colName = f"REDUCED-{'-'.join(map(str, group))}-{i}"
+                data_standardized[colName] = reducer.transform(
+                    data_standardized[group]
+                )[:, i]
+            data_standardized.drop(columns=group, inplace=True)
+
+        dataList = data_standardized.values.tolist()
+        func = toolbox.compile(model)  # Compile the best individual
+        return np.array([sigmoid(func(*row)) for row in dataList])
+    return predict
+
+
+predictor = create_prediction_function(
+        toolbox, columnsToEncode, correlated_groups,
+        target_encode_categorial, scalerX, reducers, getGroupNComponent
+    )
 
 
 X_test_predict = X_test.copy()
 
 # Initialize the explainer
 explainer = dx.Explainer(
-    model=hof,  # Pass the Hall of Fame
+    model=hof[0],  # Pass the Hall of Fame
     data=X_test_predict,  # Test data
     y=y_test,  # True labels
-    predict_function=predict_function,  # Custom predict function
+    predict_function=predictor,  # Custom predict function
     model_type="classification",
     label="Genetic Programming Model",
 )
 performance = explainer.model_performance()
 performance.plot()
 
-single_explanation = explainer.predict_parts(X_test_predict.iloc[1], type="shap")
+single_explanation = explainer.predict_parts(X_test_predict.iloc[0], type="shap")
 single_explanation.plot()
 
+
+profile = explainer.model_profile()
+fig = profile.plot(show=False)
 
 # %%
