@@ -97,13 +97,14 @@ def identify_categorical_columns(dataset, selected_label):
     return categorical_cols
 
 
-def update_callback(userId, gen, stats):
+def update_callback(userId, gen, stats, message):
     update_data = {
         "generation": gen,
         "best_fitness": round(float(stats["min"]), 4),
         "avg_fitness": round(float(stats["avg"]), 4),
         "max_fitness": round(float(stats["max"]), 4),
         "std_dev": round(float(stats["std"]), 4),
+        "message": message,
     }
 
     socket_cache.emit(
@@ -123,7 +124,8 @@ def eaSimpleWithCallback(
     stats=None,
     halloffame=None,
     callback=True,
-    verbose=True,
+    verbose=False,
+    stop_threshold = 50
 ):
     """This algorithm reproduces the simplest evolutionary algorithm with real-time callback updates.
 
@@ -145,44 +147,49 @@ def eaSimpleWithCallback(
     if verbose:
         print(logbook.stream)
 
-    # Call the callback with initial generation data
     if callback:
-        # best_ind = tools.selBest(population, 1)[0] if population else None
-        update_callback(userId, 0, record)
+        update_callback(userId, 0, record, "initialization")
+        
+    best_fitness_so_far = record.get("min", float("inf"))
+    stale_generations = 0
 
-    # Begin the generational process
     for gen in range(1, ngen + 1):
-        # Select the next generation individuals
         offspring = toolbox.select(population, len(population))
 
-        # Vary the pool of individuals
         offspring = algorithms.varAnd(offspring, toolbox, cxpb, mutpb)
 
-        # Evaluate the individuals with an invalid fitness
         invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
         fitnesses = toolbox.map(toolbox.evaluate, invalid_ind)
         for ind, fit in zip(invalid_ind, fitnesses):
             ind.fitness.values = fit
 
-        # Update the hall of fame with the generated individuals
         if halloffame is not None:
             halloffame.update(offspring)
 
-        # Replace the current population by the offspring
         population[:] = offspring
 
-        # Append the current generation statistics to the logbook
         record = stats.compile(population) if stats else {}
         logbook.record(gen=gen, nevals=len(invalid_ind), **record)
         if verbose:
             print(logbook.stream)
 
-        # Call the callback with updated data
         if callback:
-            # best_ind = tools.selBest(population, 1)[0] if population else None
-            update_callback(userId, gen, record)
+            update_callback(userId, gen, record, "training")
+            
+        current_min = record.get("min", float("inf"))
+        if current_min < best_fitness_so_far:
+            best_fitness_so_far = current_min
+            stale_generations = 0
+        else:
+            stale_generations += 1
 
-    return population, logbook
+        if stale_generations >= stop_threshold:
+            break
+        
+    if callback:
+        update_callback(userId, gen, record, "complete")
+
+    return population, logbook, False if stale_generations >= stop_threshold else True
 
 
 def sigmoid(x):
@@ -195,7 +202,6 @@ def sigmoid(x):
 
 
 def algorithm(model: Model, datasetCached: pd.DataFrame):
-    # dataset = dataset_cache.get(str(model.user_id)).copy()
     dataset = datasetCached.copy()
     parameters = model.parameters
 
@@ -395,7 +401,7 @@ def algorithm(model: Model, datasetCached: pd.DataFrame):
     stats.register("min", np.min)
     stats.register("max", np.max)
 
-    eaSimpleWithCallback(
+    popAlg, log, stop = eaSimpleWithCallback(
         model.user_id,
         pop,
         toolbox,
@@ -426,17 +432,17 @@ def algorithm(model: Model, datasetCached: pd.DataFrame):
     y=y_test,
     predict_function=predictor,
     model_type="classification" if classificationOk else "regression",
-    label="Genetic Programming Model",
+    label=model.model_name,
     )
     
     performance = explainer.model_performance(model_type="classification" if classificationOk else "regression")
-    fig_performance = performance.plot(show=False).to_html(full_html=True, include_plotlyjs="cdn")
+    fig_performance = performance.plot(show=False).to_html(full_html=False, include_plotlyjs=False)
     
-    single_explanation = explainer.predict_parts(X_test_predict.iloc[0], type="shap")
-    fig_single_explanation = single_explanation.plot(show=False).to_html(full_html=True, include_plotlyjs="cdn")
+    single_explanation = explainer.predict_parts(X_test_predict.iloc[0], type="shap", random_state=seed_restricted)
+    fig_single_explanation = single_explanation.plot(show=False).to_html(full_html=False, include_plotlyjs=False)
     
-    profile = explainer.model_profile(random_state=seed_restricted)
-    fig_profile = profile.plot(show=False).to_html(full_html=True, include_plotlyjs="cdn")
+    profile = explainer.model_profile(random_state=seed_restricted, verbose=False)
+    fig_profile = profile.plot(show=False).to_html(full_html=False, include_plotlyjs=False)
     
     saveModel(
         model,
@@ -486,50 +492,11 @@ def saveModel(
             
         with open(f"models/{modelId}/fig_profile.html", "w", encoding="utf-8") as f:
             f.write(fig_profile)
-            
-        # model.setResourcesPath(f"models/{modelId}")
-
 
         return True
     except Exception as e:
         print(f"Error saving model: {e}")
         return False
-
-
-# def predict_function(
-#     model,
-#     data,
-#     toolbox,
-#     columnsToEncode,
-#     correlated_groups,
-#     target_encode_categorial,
-#     scalerX,
-#     reducers,
-#     getGroupNComponent,
-# ):
-#     cols = []
-
-#     if len(columnsToEncode):
-#         data[columnsToEncode] = target_encode_categorial.transform(
-#             data[columnsToEncode]
-#         )
-
-#     data_standardized = scalerX.transform(data)
-#     for index, group  in enumerate(correlated_groups):
-#         reducer = reducers[index]
-#         n_comp = getGroupNComponent(group)
-#         for i in range(n_comp):
-#             colName = f"REDUCED-{'-'.join(map(str, group))}-{i}"
-#             cols.append(colName)
-
-#             data_standardized[colName] = reducer.transform(data_standardized[group])[
-#                 :, i
-#             ]
-#         data_standardized.drop(columns=group, inplace=True)
-
-#     dataList = data_standardized.values.tolist()
-#     func = toolbox.compile(model[0])  # Compile the best individual
-#     return np.array([sigmoid(func(*row)) for row in dataList])
 
 
 def create_prediction_function(
@@ -551,7 +518,7 @@ def create_prediction_function(
                 data[columnsToEncode]
             )
 
-        data_standardized = scalerX.transform(data)  # Standardize the data
+        data_standardized = scalerX.transform(data)
 
         for index, group in enumerate(correlated_groups):
             reducer = reducers[index]

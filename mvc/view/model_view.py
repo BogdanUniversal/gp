@@ -16,6 +16,14 @@ def getTerminalsPrimitives():
     return PRIMITIVES + TERMINALS
 
 
+def getModels(user_id):
+    try:
+        models = Model.query.filter_by(user_id=user_id).all()
+        return models
+    except Exception:
+        return None
+
+
 def createModel(user_id, dataset_id, model_name):
     try:
         parameters = parameters_cache.get(str(user_id))
@@ -48,18 +56,31 @@ def createModel(user_id, dataset_id, model_name):
         return model
     except Exception:
         return None
-
-
-# def algorithm_wrapper(model_id, datasetCached):
-#     """Wrapper to handle database session in the thread"""
-#     # Create app context for the thread
-#         try:
-#             # Get a fresh copy of the model in this thread's session
-#             model = Model.query.get(model_id)
-#             if model:
-#                 # Run the algorithm with the fresh model
-#                 algorithm(model, datasetCached)
-#             else:
-#                 print(f"Model with ID {model_id} not found")
-#         except Exception as e:
-#             print(f"Error in training thread: {str(e)}")
+    
+    
+def getPerformance(model_id):
+    try:
+        model = Model.query.filter_by(id=model_id).first()
+        
+        if not model or not model.resources_path:
+            return None
+        
+        fig_performance = os.path.join(model.resources_path, "fig_performance.html")
+        fig_profile = os.path.join(model.resources_path, "fig_profile.html")
+        fig_single_explanation = os.path.join(model.resources_path, "fig_single_explanation.html")
+        
+        if not os.path.exists(fig_performance) or not os.path.exists(fig_profile) or not os.path.exists(fig_single_explanation):
+            return None
+        
+        with open(fig_performance, "r") as file:
+            fig_performance_data = file.read()
+            
+        with open(fig_profile, "r") as file:
+            fig_profile_data = file.read()
+            
+        with open(fig_single_explanation, "r") as file:
+            fig_single_explanation_data = file.read()
+        
+        return fig_performance_data, fig_profile_data, fig_single_explanation_data
+    except Exception:
+        return None

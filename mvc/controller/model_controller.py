@@ -3,8 +3,14 @@ import threading
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from mvc.model.dataset_cache import dataset_cache
-from mvc.view.model_view import createModel, getTerminalsPrimitives
+from mvc.view.model_view import (
+    createModel,
+    getTerminalsPrimitives,
+    getModels,
+    getPerformance,
+)
 from mvc.view.user_view import getUser
+from mvc.view.dataset_view import getDataset
 from mvc.model.parameters_cache import parameters_cache
 from genetic_programming.primitive_set_gp import PRIMITIVES
 from genetic_programming.terminal_set_gp import TERMINALS
@@ -14,7 +20,6 @@ from genetic_programming.general_set import (
     MUTATION_SET,
     SELECTION_SET,
 )
-from genetic_programming.gp_algorithm import algorithm
 
 modelBp = Blueprint("model", __name__)
 
@@ -105,11 +110,14 @@ def trainModelRoute():
     try:
         currentUser = get_jwt_identity()
         currentUserId = getUser(currentUser).id
-        
+
         args = request.get_json()
         dataset_id = args.get("dataset_id")
         model_name = args.get("model_name")
         
+        if not dataset_id or not model_name:
+            return jsonify({"error": "Dataset ID and model name are required!"}), 422
+
         model = createModel(
             user_id=currentUserId,
             dataset_id=dataset_id,
@@ -119,7 +127,68 @@ def trainModelRoute():
         if not model:
             return jsonify({"error": "No parameters/dataset set!"}), 402
 
-
         return jsonify({"message": "Model training started successfully!"})
     except:
         return jsonify({"error": "Failed to start model training!"}), 402
+
+
+@modelBp.route("/get_models", methods=["GET"])
+@jwt_required()
+def getModelsRoute():
+    try:
+        currentUser = get_jwt_identity()
+        currentUserId = getUser(currentUser).id
+
+        models = getModels(currentUserId)
+
+        if not models:
+            return jsonify({"error": "No models found!"}), 404
+
+        modelsJson = [
+            {
+                "id": model.id,
+                "dataset_id": model.dataset_id,
+                "dataset_name": getDataset(currentUserId, model.dataset_id)[
+                    0
+                ].file_name,
+                "model_name": model.model_name,
+                "train_date": model.train_date,
+            }
+            for model in models
+        ]
+        modelsJson = sorted(modelsJson, key=lambda x: x["train_date"], reverse=True)
+
+        return jsonify({"models": modelsJson}), 200
+    except:
+        return jsonify({"error": "Failed to retrieve models!"}), 402
+
+
+@modelBp.route("/get_performance", methods=["GET"])
+@jwt_required()
+def getPerformanceRoute():
+    try:
+        model_id = request.args.get("model_id")
+
+        fig_performance_data, fig_profile_data, fig_single_explanation_data = (
+            getPerformance(model_id)
+        )
+        
+        if (
+            not fig_performance_data
+            or not fig_profile_data
+            or not fig_single_explanation_data
+        ):
+            return jsonify({"error": "Performance data not found!"}), 404
+
+        return (
+            jsonify(
+                {
+                    "fig_performance": fig_performance_data,
+                    "fig_profile": fig_profile_data,
+                    "fig_single_explanation": fig_single_explanation_data,
+                }
+            ),
+            200,
+        )
+    except:
+        return jsonify({"error": "Failed to retrieve performance data!"}), 402
