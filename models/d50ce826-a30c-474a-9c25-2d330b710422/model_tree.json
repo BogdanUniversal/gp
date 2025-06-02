@@ -1,0 +1,27 @@
+{
+    "name": "Protected Division",
+    "attributes": {
+        "type": "function",
+        "arity": 2,
+        "doc": "(function) def protected_div(arg0: float, arg1: float) -> float\nSafely performs division between two numbers.\n    Divides `arg0` by `arg1` and returns the result. If a division by zero occurs,\n    returns 1 instead of raising an exception.\n    Args:\n        arg0 (Primitive): The numerator.\n        arg1 (Primitive): The denominator.\n    Returns:\n        Primitive: The result of the division, or 1 if `arg1` is zero.",
+        "returnType": "float"
+    },
+    "children": [
+        {
+            "name": "IN3",
+            "attributes": {
+                "type": "variable"
+            }
+        },
+        {
+            "name": "Random Wald (1 Mean)",
+            "attributes": {
+                "type": "ephemeral",
+                "arity": 0,
+                "returnType": "float",
+                "doc": "\n        wald(mean, scale, size=None)\n\n        Draw samples from a Wald, or inverse Gaussian, distribution.\n\n        As the scale approaches infinity, the distribution becomes more like a\n        Gaussian. Some references claim that the Wald is an inverse Gaussian\n        with mean equal to 1, but this is by no means universal.\n\n        The inverse Gaussian distribution was first studied in relationship to\n        Brownian motion. In 1956 M.C.K. Tweedie used the name inverse Gaussian\n        because there is an inverse relationship between the time to cover a\n        unit distance and distance covered in unit time.\n\n        .. note::\n            New code should use the `~numpy.random.Generator.wald`\n            method of a `~numpy.random.Generator` instance instead;\n            please see the :ref:`random-quick-start`.\n\n        Parameters\n        ----------\n        mean : float or array_like of floats\n            Distribution mean, must be > 0.\n        scale : float or array_like of floats\n            Scale parameter, must be > 0.\n        size : int or tuple of ints, optional\n            Output shape.  If the given shape is, e.g., ``(m, n, k)``, then\n            ``m * n * k`` samples are drawn.  If size is ``None`` (default),\n            a single value is returned if ``mean`` and ``scale`` are both scalars.\n            Otherwise, ``np.broadcast(mean, scale).size`` samples are drawn.\n\n        Returns\n        -------\n        out : ndarray or scalar\n            Drawn samples from the parameterized Wald distribution.\n\n        See Also\n        --------\n        random.Generator.wald: which should be used for new code.\n\n        Notes\n        -----\n        The probability density function for the Wald distribution is\n\n        .. math:: P(x;mean,scale) = \\sqrt{\\frac{scale}{2\\pi x^3}}e^\n                                    \\frac{-scale(x-mean)^2}{2\\cdotp mean^2x}\n\n        As noted above the inverse Gaussian distribution first arise\n        from attempts to model Brownian motion. It is also a\n        competitor to the Weibull for use in reliability modeling and\n        modeling stock returns and interest rate processes.\n\n        References\n        ----------\n        .. [1] Brighton Webs Ltd., Wald Distribution,\n               https://web.archive.org/web/20090423014010/http://www.brighton-webs.co.uk:80/distributions/wald.asp\n        .. [2] Chhikara, Raj S., and Folks, J. Leroy, \"The Inverse Gaussian\n               Distribution: Theory : Methodology, and Applications\", CRC Press,\n               1988.\n        .. [3] Wikipedia, \"Inverse Gaussian distribution\"\n               https://en.wikipedia.org/wiki/Inverse_Gaussian_distribution\n\n        Examples\n        --------\n        Draw values from the distribution and plot the histogram:\n\n        >>> import matplotlib.pyplot as plt\n        >>> h = plt.hist(np.random.wald(3, 2, 100000), bins=200, density=True)\n        >>> plt.show()\n\n        ",
+                "value": 0.2552675621226057
+            }
+        }
+    ]
+}

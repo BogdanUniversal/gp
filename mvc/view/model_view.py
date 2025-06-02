@@ -1,4 +1,5 @@
 from functools import partial
+import json
 import os
 import threading
 from genetic_programming.gp_algorithm import algorithm
@@ -82,5 +83,25 @@ def getPerformance(model_id):
             fig_single_explanation_data = file.read()
         
         return fig_performance_data, fig_profile_data, fig_single_explanation_data
+    except Exception:
+        return None
+    
+    
+def getTree(model_id):
+    try:
+        model = Model.query.filter_by(id=model_id).first()
+        
+        if not model or not model.resources_path:
+            return None
+        
+        tree_path = os.path.join(model.resources_path, "model_tree.json")
+        
+        if not os.path.exists(tree_path):
+            return None
+        
+        with open(tree_path, "r") as file:
+            tree_data = json.load(file)
+        
+        return tree_data
     except Exception:
         return None

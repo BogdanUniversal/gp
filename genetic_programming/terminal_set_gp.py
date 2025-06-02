@@ -3,16 +3,16 @@ import numpy as np
 
 
 TERMINALS = [
-    {"id": "true", "name": "True", "type": "Constant", "function": True, "out": bool},
+    {"id": "True", "name": "True", "type": "Constant", "function": True, "out": bool},
     {
-        "id": "false",
+        "id": "False",
         "name": "False",
         "type": "Constant",
         "function": False,
         "out": bool,
     },
     {
-        "id": "one",
+        "id": "One",
         "name": "One",
         "type": "Constant",
         "function": 1,

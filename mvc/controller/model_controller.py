@@ -8,6 +8,7 @@ from mvc.view.model_view import (
     getTerminalsPrimitives,
     getModels,
     getPerformance,
+    getTree
 )
 from mvc.view.user_view import getUser
 from mvc.view.dataset_view import getDataset
@@ -192,3 +193,22 @@ def getPerformanceRoute():
         )
     except:
         return jsonify({"error": "Failed to retrieve performance data!"}), 402
+    
+    
+@modelBp.route("/get_tree", methods=["GET"])
+@jwt_required()
+def getTreeRoute():
+    try:
+        model_id = request.args.get("model_id")
+        
+        if not model_id:
+            return jsonify({"error": "Model ID is required!"}), 422
+        
+        model_tree = getTree(model_id)
+        
+        if not model_tree:
+            return jsonify({"error": "Model not found!"}), 404
+        
+        return model_tree, 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

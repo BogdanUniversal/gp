@@ -16,8 +16,16 @@ from genetic_programming.primitive_set_gp import PRIMITIVES
 from genetic_programming.terminal_set_gp import TERMINALS
 from mvc.model.socket import socket_cache
 from mvc.model.model import Model
-# from mvc.model.dataset_cache import dataset_cache
+import inspect
 import os
+import json
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning,
+    message="'force_all_finite' was renamed to 'ensure_all_finite'",
+)
 
 
 def getCorrelatedGroups(correlation_matrix, threshold=0.6):
@@ -125,7 +133,7 @@ def eaSimpleWithCallback(
     halloffame=None,
     callback=True,
     verbose=False,
-    stop_threshold = 50
+    stop_threshold=50,
 ):
     """This algorithm reproduces the simplest evolutionary algorithm with real-time callback updates.
 
@@ -149,7 +157,7 @@ def eaSimpleWithCallback(
 
     if callback:
         update_callback(userId, 0, record, "initialization")
-        
+
     best_fitness_so_far = record.get("min", float("inf"))
     stale_generations = 0
 
@@ -175,7 +183,7 @@ def eaSimpleWithCallback(
 
         if callback:
             update_callback(userId, gen, record, "training")
-            
+
         current_min = record.get("min", float("inf"))
         if current_min < best_fitness_so_far:
             best_fitness_so_far = current_min
@@ -185,7 +193,7 @@ def eaSimpleWithCallback(
 
         if stale_generations >= stop_threshold:
             break
-        
+
     if callback:
         update_callback(userId, gen, record, "complete")
 
@@ -284,7 +292,7 @@ def algorithm(model: Model, datasetCached: pd.DataFrame):
             reducer = reducer.fit(X_standardized[group])
             result = reducer.transform(X_standardized[group])
             reducers.append(reducer)
-            
+
             for i in range(n_comp):
                 colName = f"REDUCED-{'-'.join(map(str, group))}-{i}"
                 X_train_standardized[colName] = reducer.transform(
@@ -327,6 +335,35 @@ def algorithm(model: Model, datasetCached: pd.DataFrame):
         "IN",
     )
 
+    def sanitize_column_name(name):
+        """Convert column names to valid Python identifiers."""
+        # Replace hyphens with underscores
+        name = name.replace("-", "_")
+
+        # Replace other invalid characters
+        import re
+
+        name = re.sub(r"[^0-9a-zA-Z_]", "_", name)
+
+        # No need to check for leading character - we'll add IN prefix
+        return name
+
+        # Get column names after feature reduction
+
+    input_columns = []
+    for col in X_train_standardized.columns:
+        input_columns.append(col)
+
+    # Create a mapping from default arg names to column names
+    rename_dict = {}
+    for i, col_name in enumerate(input_columns):
+        # Sanitize column name but PRESERVE the IN prefix
+        safe_name = "IN_" + sanitize_column_name(col_name)
+        rename_dict[f"IN{i}"] = safe_name
+
+    # Apply the renaming
+    pset.renameArguments(**rename_dict)
+
     for funParam in parameters["functions"]:
         if funParam["type"] == "Primitive":
             fun = [f for f in PRIMITIVES if f["id"] == funParam["id"]][0]
@@ -353,14 +390,12 @@ def algorithm(model: Model, datasetCached: pd.DataFrame):
     loss = log_loss if classificationOk else mean_squared_error
 
     def evaluate(individual):
-        # Transform the tree expression in a callable function
         func = toolbox.compile(expr=individual)
-        # For multi-label classification
         if classificationOk:
             y_train_predict = [sigmoid(func(*row)) for row in X_train_list]
-        else:  # Regression case
+        else:
             y_train_predict = [func(*row) for row in X_train_list]
-        # Convert predictions and targets to arrays for loss calculation
+
         y_train_predict = np.array(y_train_predict)
         y_train_array = np.array(y_train_list)
         return (loss(y_train_array, y_train_predict), individual.height)
@@ -411,7 +446,7 @@ def algorithm(model: Model, datasetCached: pd.DataFrame):
         stats,
         halloffame=hof,
     )
-    
+
     predictor = create_prediction_function(
         classificationOk,
         toolbox,
@@ -423,27 +458,39 @@ def algorithm(model: Model, datasetCached: pd.DataFrame):
         reducers,
         getGroupNComponent,
     )
-    
+
     X_test_predict = X_test.copy()
-    
+
     explainer = dx.Explainer(
-    model=hof[0],
-    data=X_test_predict,
-    y=y_test,
-    predict_function=predictor,
-    model_type="classification" if classificationOk else "regression",
-    label=model.model_name,
+        model=hof[0],
+        data=X_test_predict,
+        y=y_test,
+        predict_function=predictor,
+        model_type="classification" if classificationOk else "regression",
+        label=model.model_name,
     )
-    
-    performance = explainer.model_performance(model_type="classification" if classificationOk else "regression")
-    fig_performance = performance.plot(show=False).to_html(full_html=False, include_plotlyjs=False)
-    
-    single_explanation = explainer.predict_parts(X_test_predict.iloc[0], type="shap", random_state=seed_restricted)
-    fig_single_explanation = single_explanation.plot(show=False).to_html(full_html=False, include_plotlyjs=False)
-    
+
+    performance = explainer.model_performance(
+        model_type="classification" if classificationOk else "regression"
+    )
+    fig_performance = performance.plot(show=False).to_html(
+        full_html=False, include_plotlyjs=False
+    )
+
+    single_explanation = explainer.predict_parts(
+        X_test_predict.iloc[0], type="shap", random_state=seed_restricted
+    )
+    fig_single_explanation = single_explanation.plot(show=False).to_html(
+        full_html=False, include_plotlyjs=False
+    )
+
     profile = explainer.model_profile(random_state=seed_restricted, verbose=False)
-    fig_profile = profile.plot(show=False).to_html(full_html=False, include_plotlyjs=False)
-    
+    fig_profile = profile.plot(show=False).to_html(
+        full_html=False, include_plotlyjs=False
+    )
+
+    model_tree = tree_to_dict(hof[0], pset)
+
     saveModel(
         model,
         hof[0],
@@ -451,10 +498,11 @@ def algorithm(model: Model, datasetCached: pd.DataFrame):
         fig_performance,
         fig_single_explanation,
         fig_profile,
+        model_tree,
     )
-    
+
     return hof[0]
-    
+
 
 def saveModel(
     model,
@@ -463,6 +511,7 @@ def saveModel(
     fig_performance,
     fig_single_explanation,
     fig_profile,
+    model_tree,
 ):
     try:
         if (
@@ -472,6 +521,7 @@ def saveModel(
             or not fig_performance
             or not fig_single_explanation
             or not fig_profile
+            or not model_tree
         ):
             return False
         modelId = str(model.id)
@@ -480,18 +530,23 @@ def saveModel(
 
         with open(f"models/{modelId}/model.pkl", "wb") as f:
             dill.dump(best_individual, f)
-        
+
         with open(f"models/{modelId}/predictor.pkl", "wb") as f:
             dill.dump(predictor, f)
-            
+
         with open(f"models/{modelId}/fig_performance.html", "w", encoding="utf-8") as f:
             f.write(fig_performance)
-            
-        with open(f"models/{modelId}/fig_single_explanation.html", "w", encoding="utf-8") as f:
+
+        with open(
+            f"models/{modelId}/fig_single_explanation.html", "w", encoding="utf-8"
+        ) as f:
             f.write(fig_single_explanation)
-            
+
         with open(f"models/{modelId}/fig_profile.html", "w", encoding="utf-8") as f:
             f.write(fig_profile)
+
+        with open(f"models/{modelId}/model_tree.json", "w", encoding="utf-8") as f:
+            json.dump(model_tree, f, indent=4)
 
         return True
     except Exception as e:
@@ -532,7 +587,7 @@ def create_prediction_function(
 
         dataList = data_standardized.values.tolist()
         func = toolbox.compile(model)
-        
+
         if classificationOk:
             return np.array([sigmoid(func(*row)) for row in dataList])
         else:
@@ -540,3 +595,109 @@ def create_prediction_function(
             return scalerY.inverse_transform(predictions.reshape(-1, 1)).flatten()
 
     return predict
+
+
+def tree_to_dict(individual, pset):
+    expr = individual
+
+    def format_function_doc(func, in_types=None, out_type=None):
+        try:
+            name = func.func.__name__ if isinstance(func, partial) else func.__name__
+
+            if in_types:
+                params = []
+                for i, param_type in enumerate(in_types):
+                    type_name = (
+                        str(param_type).replace("<class '", "").replace("'>", "")
+                    )
+                    params.append(f"arg{i}: {type_name}")
+
+                param_str = ", ".join(params)
+
+                return_type = str(out_type).replace("<class '", "").replace("'>", "")
+
+                formatted_sig = f"def {name}({param_str}) -> {return_type}"
+            else:
+                sig = inspect.signature(func)
+                formatted_sig = f"def {name}{str(sig)}"
+
+            doc = func.func.__doc__ if isinstance(func, partial) else func.__doc__
+            doc = doc.strip()
+
+            return f"(function) {formatted_sig}\n{doc}"
+        except (ValueError, TypeError):
+            return func.func.__doc__ if isinstance(func, partial) else func.__doc__
+
+    def _convert_expr(expr, start=0):
+        if isinstance(expr[start], gp.Primitive):
+            primitive = expr[start]
+            prim = [p for p in PRIMITIVES if p["id"] == primitive.name][0]
+            result = {
+                "name": prim["name"],
+                "attributes": {
+                    "type": "primitive",
+                    "arity": primitive.arity,
+                    "doc": format_function_doc(
+                        prim["function"], prim["in"], prim["out"]
+                    ),
+                    "returnType": str(primitive.ret)
+                    .replace("<class '", "")
+                    .replace("'>", ""),
+                },
+                "children": [],
+            }
+
+            end = start + 1
+            for _ in range(primitive.arity):
+                child, end = _convert_expr(expr, end)
+                result["children"].append(child)
+
+            return result, end
+
+        else:
+            terminal = expr[start]
+            if hasattr(terminal, "name") and terminal.name.startswith("IN"):
+                # result = {
+                #     "name": terminal.name,
+                #     "attributes": {
+                #         "type": "variable",
+                #     },
+                # }
+                display_name = terminal.name
+                    # Use the renamed argument instead of the default IN0, IN1, etc.
+                index = int(terminal.name[2:])  # Extract the number from "IN0", "IN1", etc.
+                if index < len(pset.arguments):
+                    display_name = pset.arguments[index]
+                
+                result = {
+                    "name": display_name,
+                    "attributes": {
+                        "type": "variable",
+                    },}
+            elif "rand_" in str(terminal) or isinstance(terminal, (float, int, bool)):
+                name = str(terminal)
+                nameT = name.split("object")[0].split(".")[-1].strip()
+
+                term = [t for t in TERMINALS if t["id"] == nameT][0]
+                result = {
+                    "name": term["name"],
+                    "attributes": {
+                        "type": "ephemeral",
+                        "arity": 0,
+                        "returnType": str(term["out"])
+                        .replace("<class '", "")
+                        .replace("'>", ""),
+                        "doc": format_function_doc(term["function"], term["out"]),
+                        "value": terminal.value,
+                    },
+                }
+            else:
+                result = {
+                    "name": str(terminal.value),
+                    "attributes": {"type": "constant"},
+                }
+
+            return result, start + 1
+
+    tree_dict, _ = _convert_expr(expr)
+    return tree_dict

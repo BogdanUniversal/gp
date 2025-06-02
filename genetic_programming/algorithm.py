@@ -450,15 +450,15 @@ params = {
     "selectionMethod": {"id": "tournament", "name": "Tournament Selection"},
     "objective": "Classification",
     "functions": [
-        {"id": "if", "name": "If Then Else", "type": "Primitive"},
+        {"id": "if_then_else", "name": "If Then Else", "type": "Primitive"},
         {"id": "rand_gauss_0", "name": "Random Normal (0 Mean)", "type": "Terminal"},
-        {"id": "add", "name": "Addition", "type": "Primitive"},
-        {"id": "sub", "name": "Substraction", "type": "Primitive"},
-        {"id": "mul", "name": "Multiplication", "type": "Primitive"},
-        {"id": "div", "name": "Protected Division", "type": "Primitive"},
-        {"id": "and", "name": "And", "type": "Primitive"},
-        {"id": "or", "name": "Or", "type": "Primitive"},
-        {"id": "not", "name": "Not", "type": "Primitive"},
+        {"id": "add_", "name": "Addition", "type": "Primitive"},
+        {"id": "sub_", "name": "Substraction", "type": "Primitive"},
+        {"id": "mul_", "name": "Multiplication", "type": "Primitive"},
+        {"id": "div_", "name": "Protected Division", "type": "Primitive"},
+        {"id": "and_", "name": "And", "type": "Primitive"},
+        {"id": "or_", "name": "Or", "type": "Primitive"},
+        {"id": "not_", "name": "Not", "type": "Primitive"},
         {"id": "lt", "name": "Lower Than", "type": "Primitive"},
         {"id": "le", "name": "Lower Equal", "type": "Primitive"},
         {"id": "eq", "name": "Equal", "type": "Primitive"},
@@ -638,6 +638,31 @@ pset = gp.PrimitiveSetTyped(
     "IN",
 )
 
+# def sanitize_column_name(name):
+#      """Convert column names to valid Python identifiers."""
+#      # Replace hyphens with underscores
+#      name = name.replace('-', '_')
+     
+#      # Replace other invalid characters
+#      import re
+#      name = re.sub(r'[^0-9a-zA-Z_]', '_', name)
+     
+#      # No need to check for leading character - we'll add IN prefix
+#      return name
+ 
+#      # Get column names after feature reduction
+# input_columns = []
+# for col in X_train_standardized.columns:
+#     input_columns.append(col)
+# # Create a mapping from default arg names to column names
+# rename_dict = {}
+# for i, col_name in enumerate(input_columns):
+#     # Sanitize column name but PRESERVE the IN prefix
+#     safe_name = "IN_" + sanitize_column_name(col_name)
+#     rename_dict[f"IN{i}"] = safe_name
+# # Apply the renaming
+# pset.renameArguments(**rename_dict)
+
 for funParam in parameters["functions"]:
     if funParam["type"] == "Primitive":
         fun = [f for f in PRIMITIVES if f["id"] == funParam["id"]][0]
@@ -733,6 +758,7 @@ eaSimpleWithCallback(
     halloffame=hof,
 )
 
+pset.addTerminal(True, bool, name="true")
 
 # %%
 
@@ -830,3 +856,115 @@ profile = explainer.model_profile()
 fig = profile.plot(show=False)
 
 # %%
+import json
+from primitive_set_gp import PRIMITIVES
+from terminal_set_gp import TERMINALS
+import inspect
+
+def tree_to_dict(individual, pset):
+    """Convert a DEAP GP tree to a dict for D3.js visualization."""
+    if not isinstance(individual, gp.PrimitiveTree):
+        expr = individual
+    else:
+        expr = individual
+        
+    
+    def format_function_doc(func, in_types=None, out_type=None):
+        """Format function signature and docstring in a nice readable format"""
+        try:
+            name = func.__name__
+            
+            if in_types:
+                params = []
+                for i, param_type in enumerate(in_types):
+                    type_name = str(param_type).replace("<class '", "").replace("'>", "")
+                    params.append(f"arg{i}: {type_name}")
+                
+                param_str = ", ".join(params)
+
+                return_type = str(out_type).replace("<class '", "").replace("'>", "")
+
+                formatted_sig = f"def {name}({param_str}) -> {return_type}"
+            else:
+                sig = inspect.signature(func)
+                formatted_sig = f"def {name}{str(sig)}"
+            
+            doc = func.__doc__ or ""
+            doc = doc.strip()
+
+            return f"(function) {formatted_sig}\n{doc}"
+        except (ValueError, TypeError):
+            return func.__doc__ or ""    
+    
+
+    def _convert_expr(expr, start=0):
+        """Recursively convert the expression."""
+        if isinstance(expr[start], gp.Primitive):
+            primitive = expr[start]
+            prim = [p for p in PRIMITIVES if p["id"] == primitive.name][0]
+            result = {
+                "name": prim["name"],
+                "attributes": {
+                    "type": "function",
+                    "arity": primitive.arity,
+                    "doc": format_function_doc(prim["function"], prim["in"], prim["out"]),
+                    "returnType": str(primitive.ret).replace("<class '", "").replace("'>", "")
+                },
+                "children": []
+            }
+            
+            end = start + 1
+            for _ in range(primitive.arity):
+                child, end = _convert_expr(expr, end)
+                result["children"].append(child)
+            
+            return result, end
+        
+        else:
+            terminal = expr[start]
+            
+            if hasattr(terminal, 'name') and terminal.name.startswith("IN"):
+                result = {
+                    "name": terminal.name
+                }
+            elif "rand_" in str(terminal):
+                name = str(terminal)
+                if "object at" in name:
+                    nameT = name.split("object")[0].split(".")[-1].strip()
+                    term = [t for t in TERMINALS if t["id"] == nameT][0]
+                result = {
+                    "name": term["name"],
+                    "attributes": {
+                        "type": "constant",
+                        "arity": 0,
+                        "returnType": str(term["out"]).replace("<class '", "").replace("'>", ""),
+                        "doc": format_function_doc(term["function"], term["out"])
+                    },
+                    "children": []
+                }
+            elif isinstance(terminal, (float, int, bool)):
+                result = {
+                    "name": str(terminal)
+                }
+            else:
+                result = {
+                    "name": str(terminal)
+                }
+            
+            return result, start + 1
+
+    tree_dict, _ = _convert_expr(expr)
+    return tree_dict
+
+asd = tree_to_dict(hof[0], pset)
+
+# %%
+
+def tree_to_js(hof_0, pset, var_name="orgChart"):
+    """Convert the best individual to JavaScript format."""
+    tree_dict = tree_to_dict(hof_0, pset)
+    js_str = f"const {var_name} = {json.dumps(tree_dict, indent=2)};"
+    return js_str
+
+tree = tree_to_js(hof[0], pset)
+
