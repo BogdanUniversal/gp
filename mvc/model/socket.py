@@ -13,7 +13,6 @@ class SocketCache:
 
     def set(self, userId: str, sid: dict):
         with self._lock:
-            print(f"Setting socket for user {userId} with sid: {sid}")
             self._cache[userId] = sid
 
     def remove(self, userId: str):
@@ -22,7 +21,6 @@ class SocketCache:
                 self._cache.pop(userId, None)
 
     def emit(self, userId: str, event: str, data: dict):
-        """Emit an event to a specific user's socket."""
         with self._lock:
             sid = self._cache[userId]["sid"] if userId in self._cache else None,
             if sid:

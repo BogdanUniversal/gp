@@ -209,9 +209,15 @@ def sigmoid(x):
         return z / (1 + z)
 
 
-def algorithm(model: Model, datasetCached: pd.DataFrame):
+def algorithm(
+    model_id: str,
+    user_id: str,
+    model_name: str,
+    parametersCached: dict,
+    datasetCached: pd.DataFrame,
+):
     dataset = datasetCached.copy()
-    parameters = model.parameters
+    parameters = parametersCached
 
     dataset = dataset[parameters["selectedFeatures"] + [parameters["selectedLabel"]]]
     dataset.dropna(inplace=True)
@@ -437,7 +443,7 @@ def algorithm(model: Model, datasetCached: pd.DataFrame):
     stats.register("max", np.max)
 
     popAlg, log, stop = eaSimpleWithCallback(
-        model.user_id,
+        user_id,
         pop,
         toolbox,
         parameters["crossChance"],
@@ -467,7 +473,7 @@ def algorithm(model: Model, datasetCached: pd.DataFrame):
         y=y_test,
         predict_function=predictor,
         model_type="classification" if classificationOk else "regression",
-        label=model.model_name,
+        label=model_name,
     )
 
     performance = explainer.model_performance(
@@ -492,7 +498,7 @@ def algorithm(model: Model, datasetCached: pd.DataFrame):
     model_tree = tree_to_dict(hof[0], pset)
 
     saveModel(
-        model,
+        model_id,
         hof[0],
         predictor,
         fig_performance,
@@ -505,7 +511,7 @@ def algorithm(model: Model, datasetCached: pd.DataFrame):
 
 
 def saveModel(
-    model,
+    model_id,
     best_individual,
     predictor,
     fig_performance,
@@ -515,7 +521,7 @@ def saveModel(
 ):
     try:
         if (
-            not model
+            not model_id
             or not best_individual
             or not predictor
             or not fig_performance
@@ -524,7 +530,7 @@ def saveModel(
             or not model_tree
         ):
             return False
-        modelId = str(model.id)
+        modelId = str(model_id)
 
         os.makedirs(f"models/{modelId}", exist_ok=True)
 
@@ -657,23 +663,17 @@ def tree_to_dict(individual, pset):
         else:
             terminal = expr[start]
             if hasattr(terminal, "name") and terminal.name.startswith("IN"):
-                # result = {
-                #     "name": terminal.name,
-                #     "attributes": {
-                #         "type": "variable",
-                #     },
-                # }
                 display_name = terminal.name
-                    # Use the renamed argument instead of the default IN0, IN1, etc.
-                index = int(terminal.name[2:])  # Extract the number from "IN0", "IN1", etc.
+                index = int(terminal.name[2:])
                 if index < len(pset.arguments):
                     display_name = pset.arguments[index]
-                
+
                 result = {
                     "name": display_name,
                     "attributes": {
                         "type": "variable",
-                    },}
+                    },
+                }
             elif "rand_" in str(terminal) or isinstance(terminal, (float, int, bool)):
                 name = str(terminal)
                 nameT = name.split("object")[0].split(".")[-1].strip()

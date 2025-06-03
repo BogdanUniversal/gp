@@ -5,10 +5,12 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 from mvc.model.dataset_cache import dataset_cache
 from mvc.view.model_view import (
     createModel,
+    getFeatureTypes,
     getTerminalsPrimitives,
     getModels,
     getPerformance,
-    getTree
+    getTree,
+    makePrediction
 )
 from mvc.view.user_view import getUser
 from mvc.view.dataset_view import getDataset
@@ -210,5 +212,43 @@ def getTreeRoute():
             return jsonify({"error": "Model not found!"}), 404
         
         return model_tree, 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@modelBp.route("/get_features_types", methods=["GET"])
+@jwt_required()
+def getFeatureTypesRoute():
+    try:
+        model_id = request.args.get("model_id")
+        if not model_id:
+            return jsonify({"error": "Model ID is required!"}), 422
+        
+        features = getFeatureTypes(model_id)
+        if not features:
+            return jsonify({"error": "No features found!"}), 404
+        
+        return jsonify(features), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+    
+@modelBp.route("/make_prediction", methods=["POST"])
+@jwt_required()
+def makePredictionRoute():
+    try:
+        model_id = request.json.get("model_id")
+        data = request.json.get("data")
+
+        if not model_id or not data:
+            return jsonify({"error": "Model ID and data are required!"}), 422
+
+        prediction = makePrediction(model_id, data)
+        print(f"Prediction: {prediction}")
+
+        if prediction is None:
+            return jsonify({"error": "Prediction failed!"}), 500
+
+        return jsonify({"prediction": prediction}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
