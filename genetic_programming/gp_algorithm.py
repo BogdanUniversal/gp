@@ -15,7 +15,6 @@ import itertools
 from genetic_programming.primitive_set_gp import PRIMITIVES
 from genetic_programming.terminal_set_gp import TERMINALS
 from mvc.model.socket import socket_cache
-from mvc.model.model import Model
 import inspect
 import os
 import json
@@ -136,8 +135,6 @@ def eaSimpleWithCallback(
     stop_threshold=50,
 ):
     """This algorithm reproduces the simplest evolutionary algorithm with real-time callback updates.
-
-    :param callback: Function called after each generation with (gen, statistics, best_individual)
     """
     logbook = tools.Logbook()
     logbook.header = ["gen", "nevals"] + (stats.fields if stats else [])
@@ -342,32 +339,21 @@ def algorithm(
     )
 
     def sanitize_column_name(name):
-        """Convert column names to valid Python identifiers."""
-        # Replace hyphens with underscores
         name = name.replace("-", "_")
-
-        # Replace other invalid characters
         import re
 
         name = re.sub(r"[^0-9a-zA-Z_]", "_", name)
-
-        # No need to check for leading character - we'll add IN prefix
         return name
-
-        # Get column names after feature reduction
 
     input_columns = []
     for col in X_train_standardized.columns:
         input_columns.append(col)
 
-    # Create a mapping from default arg names to column names
     rename_dict = {}
     for i, col_name in enumerate(input_columns):
-        # Sanitize column name but PRESERVE the IN prefix
         safe_name = "IN_" + sanitize_column_name(col_name)
         rename_dict[f"IN{i}"] = safe_name
 
-    # Apply the renaming
     pset.renameArguments(**rename_dict)
 
     for funParam in parameters["functions"]:
@@ -556,7 +542,6 @@ def saveModel(
 
         return True
     except Exception as e:
-        print(f"Error saving model: {e}")
         return False
 
 

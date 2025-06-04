@@ -129,9 +129,14 @@ def trainModelRoute():
 
         if not model:
             return jsonify({"error": "No parameters/dataset set!"}), 402
+        
+        if type(model) == IndexError:
+            return jsonify({"error": str(model)}), 410
 
         return jsonify({"message": "Model training started successfully!"})
-    except:
+    except Exception as e:
+        if type(e) == IndexError:
+            return jsonify({"error": str(e)}), 410
         return jsonify({"error": "Failed to start model training!"}), 402
 
 
@@ -244,7 +249,6 @@ def makePredictionRoute():
             return jsonify({"error": "Model ID and data are required!"}), 422
 
         prediction = makePrediction(model_id, data)
-        print(f"Prediction: {prediction}")
 
         if prediction is None:
             return jsonify({"error": "Prediction failed!"}), 500

@@ -15,7 +15,7 @@ from extensions import db
 import dill
 from deap import gp, algorithms, creator, base, tools
 from sklearn.preprocessing import LabelEncoder
-from flask import current_app
+import concurrent.futures
 
 
 def getTerminalsPrimitives():
@@ -31,6 +31,7 @@ def getModels(user_id):
 
 
 def createModel(user_id, dataset_id, model_name):
+    created_model_id = None
     try:
         parameters = parameters_cache.get(str(user_id))
         datasetCached = dataset_cache.get(str(user_id))
@@ -78,18 +79,21 @@ def createModel(user_id, dataset_id, model_name):
             model_name=model_name,
             parameters=parameters,
         )
-        
+
         db.session.add(model)
         db.session.commit()
-        
-        training_thread = threading.Thread(
-            target=partial(algorithm, model.id, model.user_id, model.model_name, parameters, datasetCached)
-        )
+        created_model_id = model.id
 
-        training_thread.daemon = True
-        training_thread.start()
-        training_thread.join() 
-
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(
+                algorithm,
+                model.id,
+                model.user_id,
+                model.model_name,
+                parameters,
+                datasetCached,
+            )
+            future.result()
 
         model.setResourcesPath(f"models/{model.id}")
 
@@ -98,9 +102,14 @@ def createModel(user_id, dataset_id, model_name):
 
         return model
     except Exception as e:
-        print(f"Error creating model: {e}")
         db.session.rollback()
-        return None
+
+        if created_model_id:
+            model_to_delete = Model.query.filter_by(id=created_model_id).first()
+            if model_to_delete:
+                db.session.delete(model_to_delete)
+                db.session.commit()
+        return e
 
 
 def getPerformance(model_id):
@@ -219,12 +228,8 @@ def makePrediction(model_id, data):
                 input_df[col] = pd.to_numeric(input_df[col], errors="coerce")
             elif dtype == "text":
                 input_df[col] = input_df[col].astype(str)
-                
-        print(f"dataframe dtypes: {input_df.dtypes}")
 
         prediction = predict_function(predictor, input_df)
-        print(f"Prediction VIEW: {prediction[0]}")
-        print(f'Prediction VIEW classes: {model.parameters["labelClasses"]}')
 
         return (
             {

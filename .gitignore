@@ -6,6 +6,15 @@ __pycache__/
 # C extensions
 *.so
 
+# Datasets
+.mvc/datasets/
+*.csv
+
+# Models
+*.pkl
+*.html
+models/
+
 # Distribution / packaging
 .Python
 build/
